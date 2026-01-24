@@ -13,13 +13,11 @@ const AdminDashboard = () => {
     const fetchMetrics = async () => {
       try {
         const response = await adminService.getMetrics();
-        console.log('🔍 Admin metrics response:', response.data);
 
-        // Handle both response formats
         const responseData = response.data.data || response.data;
         setMetrics(responseData);
       } catch (error) {
-        console.error("Failed to fetch metrics:", error);
+        error("Failed to fetch metrics:", error);
       } finally {
         setIsLoading(false);
       }

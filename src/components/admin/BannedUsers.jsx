@@ -14,13 +14,11 @@ const BannedUsers = () => {
   const fetchBannedGuests = async () => {
     try {
       const response = await adminService.getBannedGuests();
-      console.log('🔍 Banned guests response:', response.data);
 
-      // Handle both response formats
       const responseData = response.data.data || response.data;
       setBannedGuests(responseData || []);
     } catch (error) {
-      console.error("Failed to fetch banned guests:", error);
+      error("Failed to fetch banned guests:", error);
     } finally {
       setIsLoading(false);
     }

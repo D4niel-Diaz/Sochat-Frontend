@@ -15,13 +15,11 @@ const ReportsList = () => {
   const fetchReports = async () => {
     try {
       const response = await adminService.getReports(filter);
-      console.log('🔍 Reports response:', response.data);
 
-      // Handle both response formats
       const responseData = response.data.data || response.data;
       setReports(responseData || []);
     } catch (error) {
-      console.error("Failed to fetch reports:", error);
+      error("Failed to fetch reports:", error);
     } finally {
       setIsLoading(false);
     }

@@ -44,11 +44,8 @@ export const AdminProvider = ({ children }) => {
 
       const response = await adminService.login(emailInput, password);
 
-      console.log('🔍 Admin login response:', response.data);
-
       const responseData = response.data.data || response.data;
       if (!responseData || !responseData.admin_id) {
-        console.error('❌ Invalid admin login response structure:', response.data);
         throw new Error('Invalid response from server');
       }
 

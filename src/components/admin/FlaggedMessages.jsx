@@ -13,13 +13,11 @@ const FlaggedMessages = () => {
   const fetchFlaggedMessages = async () => {
     try {
       const response = await adminService.getFlaggedMessages();
-      console.log('🔍 Flagged messages response:', response.data);
 
-      // Handle both response formats
       const responseData = response.data.data || response.data;
       setFlaggedMessages(responseData || []);
     } catch (error) {
-      console.error("Failed to fetch flagged messages:", error);
+      error("Failed to fetch flagged messages:", error);
     } finally {
       setIsLoading(false);
     }

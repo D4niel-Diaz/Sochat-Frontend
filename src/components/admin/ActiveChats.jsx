@@ -16,12 +16,11 @@ const ActiveChats = () => {
   const fetchChats = async () => {
     try {
       const response = await adminService.getActiveChats();
-      console.log('🔍 Active chats response:', response.data);
 
       const responseData = response.data.data || response.data;
       setChats(responseData || []);
     } catch (error) {
-      console.error("Failed to fetch chats:", error);
+      error("Failed to fetch chats:", error);
     } finally {
       setIsLoading(false);
     }

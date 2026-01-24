@@ -134,7 +134,7 @@ export const GuestProvider = ({ children }) => {
         try {
           await refreshSession();
         } catch (refreshErr) {
-          console.error("Session refresh failed, creating new session:", refreshErr);
+          error("Session refresh failed, creating new session:", refreshErr);
           clearSession();
           createSession();
         }

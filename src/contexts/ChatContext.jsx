@@ -332,12 +332,9 @@ export const ChatProvider = ({ children }) => {
     try {
       const response = await chatService.sendMessage(sessionToken, chatId, content.trim());
 
-      console.log('🔍 Send message response:', response.data);
-
       // Handle both response formats
       const responseData = response.data.data || response.data;
       if (!responseData || !responseData.message_id) {
-        console.error('❌ Invalid send message response structure:', response.data);
         throw new Error('Invalid response from server');
       }
 
@@ -376,10 +373,6 @@ export const ChatProvider = ({ children }) => {
   }, [status, isWebSocketConnected, startPolling, stopPolling]);
 
   useEffect(() => {
-    return () => stopPolling();
-  }, [stopPolling]);
-
-  useEffect(() => {
     if (!sessionToken || !guestId) return;
 
     connectWebSocket(sessionToken, guestId)
@@ -387,8 +380,9 @@ export const ChatProvider = ({ children }) => {
         setIsWebSocketConnected(true);
       })
       .catch((err) => {
-        console.error("Failed to connect WebSocket:", err);
+        error("Failed to connect WebSocket:", err);
         setIsWebSocketConnected(false);
+        toast.error("Real-time features unavailable. Some features may not work.");
       });
 
     const checkConnectionInterval = setInterval(() => {
@@ -400,7 +394,7 @@ export const ChatProvider = ({ children }) => {
       try {
         await presenceService.heartbeat(sessionToken);
       } catch (err) {
-        console.error("Heartbeat failed:", err);
+        error("Heartbeat failed:", err);
       }
     };
 
@@ -416,7 +410,9 @@ export const ChatProvider = ({ children }) => {
       }
       disconnectWebSocket();
       // CRITICAL: Notify backend of disconnect
-      presenceService.disconnect(sessionToken).catch(console.error);
+      presenceService.disconnect(sessionToken).catch((err) => {
+        error("Failed to notify backend of disconnect:", err);
+      });
     };
   }, [sessionToken, guestId]);
 
@@ -432,7 +428,7 @@ export const ChatProvider = ({ children }) => {
           
           // Don't match with self
           if (partnerId === guestId) {
-            console.warn("Ignoring self-match attempt");
+            warn("Ignoring self-match attempt");
             return;
           }
           
@@ -519,8 +515,6 @@ export const ChatProvider = ({ children }) => {
     if (!sessionToken || !guestId || !isWebSocketConnected) return;
 
     const unsubscribeChatEnded = subscribeToChatEnded((data) => {
-      console.log('Chat ended event received:', data);
-
       // Use ref to get current chatId value
       const currentChatId = chatIdRef.current;
 
@@ -529,7 +523,6 @@ export const ChatProvider = ({ children }) => {
       if (currentChatId && data.chat_id === currentChatId) {
         // CRITICAL: Prevent duplicate processing
         if (statusRef.current === 'ended') {
-          console.log('Chat already ended, skipping duplicate event');
           return;
         }
 
@@ -546,7 +539,7 @@ export const ChatProvider = ({ children }) => {
       } else if (!currentChatId && data.ended_by !== guestId) {
         // We received a chat ended event but we're not in a chat
         // This means we were the one who ended it, or it's an old event
-        console.log('Ignoring chat ended event - not in active chat');
+        // Ignore silently
       }
     });
 
