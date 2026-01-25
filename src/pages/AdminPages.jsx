@@ -38,7 +38,7 @@ const AdminLayout = ({ children, activeTab }) => {
             <div className="flex items-center gap-8">
               <div className="flex items-center gap-2">
                 <MessageSquare className="size-8 text-primary" />
-                <span className="text-xl font-bold">SORSU TALK</span>
+                <span className="text-xl font-bold">Sochat</span>
               </div>
               <div className="hidden md:flex items-center gap-1">
                 {navItems.map((item) => (
