@@ -2,7 +2,7 @@ import Pusher from 'pusher-js';
 import { log, error, warn } from '../utils/logger';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
-const REVERB_PORT = Number(import.meta.env.VITE_REVERB_PORT || 8080);
+const REVERB_PORT = Number(import.meta.env.VITE_REVERB_PORT || 443);
 const REVERB_APP_KEY = import.meta.env.VITE_REVERB_APP_KEY || 'reverb-app-key';
 
 const getApiUrl = () => {
