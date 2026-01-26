@@ -38,72 +38,8 @@ let currentGuestId = null;
 let subscriptions = new Map();
 
 export const connectWebSocket = (sessionToken, guestId) => {
-  if (connectionPromise && pusher?.connection.state === 'connected') {
-    return connectionPromise;
-  }
-
-  currentSessionToken = sessionToken;
-  currentGuestId = guestId;
-  isIntentionalDisconnect = false;
-  reconnectAttempts = 0;
-  reconnectDelay = 1000;
-
-  connectionPromise = new Promise((resolve, reject) => {
-    try {
-      const wsOrigin = getWsOrigin();
-      const apiUrl = getApiUrl();
-
-      pusher = new Pusher(REVERB_APP_KEY, {
-        wsHost: wsOrigin.hostname,
-        wsPort: REVERB_PORT,
-        wssPort: REVERB_PORT,
-        forceTLS: wsOrigin.protocol === 'https:',
-        enabledTransports: ['ws', 'wss'],
-        disableStats: true,
-        cluster: 'mt1',
-        authEndpoint: `${apiUrl.origin}${apiUrl.pathname.replace(/\/+$/, '')}/broadcasting/auth`,
-        auth: {
-          headers: {
-            Authorization: `Bearer ${sessionToken}`,
-          },
-        },
-      });
-
-      pusher.connection.bind('connected', () => {
-        if (isIntentionalDisconnect) {
-          pusher.disconnect();
-          return;
-        }
-        reconnectAttempts = 0;
-        reconnectDelay = 1000;
-        resolve(pusher);
-      });
-
-      pusher.connection.bind('error', (error) => {
-        if (isIntentionalDisconnect) {
-          return;
-        }
-        error("Pusher connection error:", error);
-        handleReconnection(reject, error);
-      });
-
-      pusher.connection.bind('disconnected', () => {
-        if (!isIntentionalDisconnect) {
-          handleReconnection();
-        }
-      });
-
-      pusher.connection.bind('state_change', (states) => {
-        // State changes are logged by Pusher internally, no need to log here
-      });
-
-    } catch (error) {
-      error("Failed to initialize Pusher:", error);
-      reject(error);
-    }
-  });
-
-  return connectionPromise;
+  // WebSocket server not available, return a rejected promise
+  return Promise.reject(new Error("WebSocket server not available"));
 };
 
 const handleReconnection = (reject = null, error = null) => {
