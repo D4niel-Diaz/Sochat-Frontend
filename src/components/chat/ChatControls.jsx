@@ -1,4 +1,5 @@
 import { useChat } from "../../contexts/ChatContext";
+import { sendTyping } from "../../lib/socketClient";
 import { reportService } from "../../api/services/reportService";
 import { useGuest } from "../../contexts/GuestContext";
 import { PhoneOff, Flag, Users, X, Loader2 } from "lucide-react";

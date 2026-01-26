@@ -5,16 +5,18 @@ import { useGuest } from "./GuestContext";
 import toast from "react-hot-toast";
 import { log, error, warn } from "../utils/logger";
 import {
-  connectWebSocket,
-  disconnectWebSocket,
-  subscribeToMatch,
-  subscribeToMessage,
-  subscribeToChatEnded,
-  subscribeToTyping,
-  joinChatRoom,
-  leaveChatRoom,
+  connectSocket,
+  disconnectSocket,
+  onMatchFound,
+  onMessage,
+  onTyping,
+  onChatEnded,
+  joinPresencePool,
+  leavePresencePool,
+  sendMessage as sendSocketMessage,
+  endChat as endSocketChat,
   isConnected,
-} from "../lib/websocket";
+} from "../lib/socketClient";
 
 const ChatContext = createContext(null);
 
@@ -69,6 +71,9 @@ export const ChatProvider = ({ children }) => {
 
       // CRITICAL: Opt in to matching (mutual intent)
       await presenceService.optIn(sessionToken);
+
+      // Join presence pool via WebSocket
+      joinPresencePool();
 
       const response = await chatService.startChat(sessionToken);
 
@@ -239,7 +244,8 @@ export const ChatProvider = ({ children }) => {
       // CRITICAL: Opt out from matching when ending chat
       await presenceService.optOut(sessionToken);
 
-      await chatService.endChat(sessionToken, chatId);
+      // End chat via WebSocket server
+      await endSocketChat(chatId);
 
       // Clear all match state completely
       setChatId(null);
@@ -304,9 +310,10 @@ export const ChatProvider = ({ children }) => {
 
     try {
       setIsLoading(true);
-      
+
       // Opt out from matching
       await presenceService.optOut(sessionToken);
+      leavePresencePool();
 
       // Clear all match state
       setChatId(null);
@@ -316,7 +323,7 @@ export const ChatProvider = ({ children }) => {
       setError(null);
       previousChatIdRef.current = null;
       stopPolling();
-      
+
       toast.info("Search cancelled");
     } catch (err) {
       setError(err.message);
@@ -330,25 +337,19 @@ export const ChatProvider = ({ children }) => {
     if (!sessionToken || !chatId || !content.trim()) return;
 
     try {
-      const response = await chatService.sendMessage(sessionToken, chatId, content.trim());
-
-      // Handle both response formats
-      const responseData = response.data.data || response.data;
-      if (!responseData || !responseData.message_id) {
-        throw new Error('Invalid response from server');
-      }
+      const message = await sendSocketMessage(chatId, content.trim());
 
       const newMessage = {
-        message_id: responseData.message_id,
+        message_id: message.message_id,
         sender: "you",
-        content: responseData.content,
-        created_at: responseData.created_at,
-        is_flagged: responseData.is_flagged,
+        content: message.content,
+        created_at: message.created_at,
+        is_flagged: message.is_flagged,
       };
 
       setMessages((prev) => [...prev, newMessage]);
 
-      if (responseData.is_flagged) {
+      if (message.is_flagged) {
         toast.warning("Your message was flagged for inappropriate content");
       }
     } catch (err) {
@@ -375,12 +376,12 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     if (!sessionToken || !guestId) return;
 
-    connectWebSocket(sessionToken, guestId)
+    connectSocket(sessionToken, guestId)
       .then(() => {
         setIsWebSocketConnected(true);
       })
       .catch((err) => {
-        error("Failed to connect WebSocket:", err);
+        error("Failed to connect socket:", err);
         setIsWebSocketConnected(false);
         toast.error("Real-time features unavailable. Some features may not work.");
       });
@@ -408,7 +409,7 @@ export const ChatProvider = ({ children }) => {
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
       }
-      disconnectWebSocket();
+      disconnectSocket();
       // CRITICAL: Notify backend of disconnect
       presenceService.disconnect(sessionToken).catch((err) => {
         error("Failed to notify backend of disconnect:", err);
@@ -419,21 +420,18 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     if (!sessionToken || !guestId || !isWebSocketConnected) return;
 
-    unsubscribeMatchRef.current = subscribeToMatch((data) => {
+    unsubscribeMatchRef.current = onMatchFound((data) => {
       // Only process match if we're currently waiting and don't have a chat
       if (statusRef.current === "waiting" && !chatIdRef.current) {
-        if (data.chat_id && data.partner_id_1 && data.partner_id_2) {
-          // Verify the partner is different from current user
-          const partnerId = data.partner_id_1 === guestId ? data.partner_id_2 : data.partner_id_1;
-          
+        if (data.chat_id && data.partner_id) {
           // Don't match with self
-          if (partnerId === guestId) {
+          if (data.partner_id === guestId) {
             warn("Ignoring self-match attempt");
             return;
           }
-          
+
           setChatId(data.chat_id);
-          setPartnerId(partnerId);
+          setPartnerId(data.partner_id);
           setStatus("matched");
           setMessages([]);
           // Only show toast for new matches from WebSocket
@@ -454,7 +452,7 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     if (!sessionToken || !guestId || !chatId || !isWebSocketConnected) return;
 
-    unsubscribeMessageRef.current = subscribeToMessage(chatId, (data) => {
+    unsubscribeMessageRef.current = onMessage(chatId, (data) => {
       setMessages((prev) => {
         const existingIds = new Set(prev.map((m) => m.message_id));
         if (existingIds.has(data.message_id)) {
@@ -485,7 +483,7 @@ export const ChatProvider = ({ children }) => {
 
     const typingTimeoutRef = { current: null };
 
-    const unsubscribeTyping = subscribeToTyping(chatId, (data) => {
+    const unsubscribeTyping = onTyping(chatId, (data) => {
       if (data.sender_guest_id !== guestId) {
         setIsPartnerTyping(data.is_typing);
 
@@ -514,7 +512,7 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     if (!sessionToken || !guestId || !isWebSocketConnected) return;
 
-    const unsubscribeChatEnded = subscribeToChatEnded((data) => {
+    const unsubscribeChatEnded = onChatEnded((data) => {
       // Use ref to get current chatId value
       const currentChatId = chatIdRef.current;
 
@@ -552,13 +550,13 @@ export const ChatProvider = ({ children }) => {
 
   useEffect(() => {
     if (chatId && chatId !== previousChatIdRef.current) {
-      if (previousChatIdRef.current) {
-        leaveChatRoom(previousChatIdRef.current);
+      // Join presence pool when entering waiting state
+      if (status === "waiting") {
+        joinPresencePool();
       }
-      joinChatRoom(chatId);
       previousChatIdRef.current = chatId;
     }
-  }, [chatId]);
+  }, [chatId, status]);
 
   // Update previousChatIdRef when chatId changes to null (chat ended)
   useEffect(() => {
