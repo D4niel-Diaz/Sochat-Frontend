@@ -1,7 +1,9 @@
 import axios from "axios";
 import { log, error, warn } from "../../utils/logger";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://sochat-backend.onrender.com/api/v1";
+// Use proxy in development, or environment variable, or fallback to localhost
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
+  (import.meta.env.DEV ? "/api/v1" : "https://sochat-backend.onrender.com/api/v1");
 
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,

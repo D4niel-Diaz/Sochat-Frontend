@@ -9,6 +9,7 @@ let connectionPromise = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 1000;
+const CONNECT_TIMEOUT_MS = 10000;
 
 // State tracking
 let currentSessionToken = null;
@@ -17,6 +18,7 @@ let isIntentionalDisconnect = false;
 let messageSequenceNumbers = new Map(); // chatId -> last sequence number
 let pendingMessages = new Map(); // chatId -> array of pending messages
 let messageBuffer = new Map(); // chatId -> buffer for out-of-order messages
+let shouldBeInPresencePool = false;
 
 // Event handlers storage
 const eventHandlers = new Map();
@@ -35,108 +37,93 @@ export const connectSocket = async (sessionToken, guestId) => {
     return socket;
   }
 
+  if (!socket) {
+    socket = io(WEBSOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+      reconnectionDelay: RECONNECT_DELAY,
+      reconnectionDelayMax: 10000,
+      timeout: 20000,
+      auth: {
+        token: sessionToken,
+        guestId: guestId
+      }
+    });
+
+    socket.on('disconnect', (reason) => {
+      log('Socket disconnected:', reason);
+    });
+
+    socket.io.on('reconnect_attempt', (attemptNumber) => {
+      reconnectAttempts = attemptNumber;
+      log(`Reconnection attempt ${attemptNumber}/${MAX_RECONNECT_ATTEMPTS}`);
+    });
+
+    socket.io.on('reconnect', (attemptNumber) => {
+      log(`Reconnected after ${attemptNumber} attempts`);
+      reconnectAttempts = 0;
+      resubscribeEvents();
+    });
+
+    socket.io.on('reconnect_failed', () => {
+      error('Reconnection failed');
+    });
+  } else {
+    socket.auth = {
+      token: sessionToken,
+      guestId: guestId
+    };
+
+    if (!socket.connected) {
+      socket.connect();
+    }
+  }
+
   if (connectionPromise) {
     return connectionPromise;
   }
 
   connectionPromise = new Promise((resolve, reject) => {
-    try {
-      socket = io(WEBSOCKET_URL, {
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
-        reconnectionDelay: RECONNECT_DELAY,
-        reconnectionDelayMax: 10000,
-        timeout: 20000,
-        auth: {
-          token: sessionToken,
-          guestId: guestId
-        }
-      });
+    const timeoutId = setTimeout(() => {
+      connectionPromise = null;
+      reject(new Error('Socket connection timeout'));
+    }, CONNECT_TIMEOUT_MS);
 
-      socket.on('connect', () => {
-        log('Socket connected');
-        reconnectAttempts = 0;
-        isIntentionalDisconnect = false;
-        resolve(socket);
-      });
+    const onConnect = () => {
+      clearTimeout(timeoutId);
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onConnectError);
 
-      socket.on('connect_error', (err) => {
-        error('Socket connection error:', err);
+      log('Socket connected');
+      reconnectAttempts = 0;
+      isIntentionalDisconnect = false;
+      connectionPromise = null;
+      resolve(socket);
+    };
 
-        if (err.message.includes('Authentication failed')) {
-          reject(new Error('Authentication failed. Check session token.'));
-          return;
-        }
+    const onConnectError = (err) => {
+      error('Socket connection error:', err);
 
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          handleReconnection();
-        } else {
-          reject(new Error('Max reconnection attempts reached'));
-        }
-      });
+      if (err?.message?.includes('Authentication failed')) {
+        clearTimeout(timeoutId);
+        socket.off('connect', onConnect);
+        socket.off('connect_error', onConnectError);
+        connectionPromise = null;
+        reject(new Error('Authentication failed. Check session token.'));
+      }
+    };
 
-      socket.on('disconnect', (reason) => {
-        log('Socket disconnected:', reason);
-
-        if (!isIntentionalDisconnect) {
-          handleReconnection();
-        }
-      });
-
-      socket.on('reconnect_attempt', (attemptNumber) => {
-        log(`Reconnection attempt ${attemptNumber}/${MAX_RECONNECT_ATTEMPTS}`);
-      });
-
-      socket.on('reconnect', (attemptNumber) => {
-        log(`Reconnected after ${attemptNumber} attempts`);
-        reconnectAttempts = 0;
-
-        // Resubscribe to all active events
-        resubscribeEvents();
-      });
-
-      socket.on('reconnect_failed', () => {
-        error('Reconnection failed');
-        reject(new Error('Reconnection failed'));
-      });
-
-    } catch (err) {
-      error('Failed to create socket:', err);
-      reject(err);
-    }
-  });
-
-  return connectionPromise;
-};
-
-/**
- * Handle automatic reconnection with exponential backoff
- */
-const handleReconnection = () => {
-  if (isIntentionalDisconnect) return;
-
-  reconnectAttempts++;
-
-  if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-    error('Max reconnection attempts reached');
-    return;
-  }
-
-  const delay = Math.min(RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), 30000);
-  log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-
-  setTimeout(() => {
-    if (!currentSessionToken || !currentGuestId) {
-      error('Missing credentials for reconnection');
+    if (socket.connected) {
+      onConnect();
       return;
     }
 
-    connectionPromise = null;
-    connectSocket(currentSessionToken, currentGuestId).catch((err) => {
-      error('Reconnection failed:', err);
-    });
-  }, delay);
+    socket.on('connect', onConnect);
+    socket.on('connect_error', onConnectError);
+  });
+
+  return connectionPromise;
 };
 
 /**
@@ -144,7 +131,7 @@ const handleReconnection = () => {
  */
 const resubscribeEvents = () => {
   // Re-join presence pool if was waiting
-  if (eventHandlers.has('match:found')) {
+  if (shouldBeInPresencePool) {
     socket.emit('presence:join');
   }
 
@@ -161,6 +148,7 @@ const resubscribeEvents = () => {
 export const disconnectSocket = () => {
   isIntentionalDisconnect = true;
   reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+  shouldBeInPresencePool = false;
 
   // Remove all event listeners
   eventHandlers.forEach((handlers, event) => {
@@ -215,6 +203,7 @@ export const joinPresencePool = () => {
     return;
   }
 
+  shouldBeInPresencePool = true;
   socket.emit('presence:join');
   log('Joined presence pool');
 };
@@ -228,6 +217,7 @@ export const leavePresencePool = () => {
     return;
   }
 
+  shouldBeInPresencePool = false;
   socket.emit('presence:leave');
   log('Left presence pool');
 };

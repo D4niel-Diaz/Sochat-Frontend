@@ -72,8 +72,14 @@ export const ChatProvider = ({ children }) => {
       // CRITICAL: Opt in to matching (mutual intent)
       await presenceService.optIn(sessionToken);
 
-      // Join presence pool via WebSocket
-      joinPresencePool();
+      if (isWebSocketConnected) {
+        setStatus("waiting");
+        setChatId(null);
+        setPartnerId(null);
+        setMessages([]);
+        joinPresencePool();
+        return;
+      }
 
       const response = await chatService.startChat(sessionToken);
 
@@ -135,7 +141,7 @@ export const ChatProvider = ({ children }) => {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [sessionToken, status]);
+  }, [sessionToken, status, isWebSocketConnected]);
 
   const fetchMessages = useCallback(async () => {
     if (!sessionToken || !chatId || isFetchingRef.current) return;
