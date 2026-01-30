@@ -5,8 +5,12 @@ import { log, error, warn } from '../utils/logger';
 // In production, this should be set to your WebSocket server URL
 // Convert https:// to wss:// and http:// to ws:// automatically
 const getWebSocketURL = () => {
+  // Default production WebSocket URL
+  const defaultProdUrl = 'https://sochat-websocket-server.onrender.com';
+  const defaultDevUrl = 'http://localhost:3001';
+  
   const url = import.meta.env.VITE_WEBSOCKET_URL || 
-    (import.meta.env.PROD ? 'wss://your-websocket-domain.com' : 'http://localhost:3001');
+    (import.meta.env.PROD ? defaultProdUrl : defaultDevUrl);
   
   // Convert https:// to wss:// and http:// to ws://
   if (url.startsWith('https://')) {
@@ -85,7 +89,17 @@ export const connectSocket = async (sessionToken, guestId) => {
     });
 
     socket.io.on('reconnect_failed', () => {
-      error('Reconnection failed');
+      error('Reconnection failed. WebSocket server may be unavailable.');
+    });
+
+    // Handle connection errors more gracefully
+    socket.io.on('error', (err) => {
+      error('Socket.IO error:', err);
+    });
+
+    // Handle transport errors
+    socket.io.on('reconnect_error', (err) => {
+      error('Reconnection error:', err);
     });
   } else {
     socket.auth = {
@@ -123,12 +137,19 @@ export const connectSocket = async (sessionToken, guestId) => {
     const onConnectError = (err) => {
       error('Socket connection error:', err);
 
+      // Handle specific error types
       if (err?.message?.includes('Authentication failed')) {
         clearTimeout(timeoutId);
         socket.off('connect', onConnect);
         socket.off('connect_error', onConnectError);
         connectionPromise = null;
         reject(new Error('Authentication failed. Check session token.'));
+      } else if (err?.message?.includes('timeout') || err?.type === 'TransportError') {
+        // Don't reject on timeout/transport errors - let reconnection handle it
+        warn('Connection timeout/transport error. Will retry...');
+      } else {
+        // For other errors, log but don't reject immediately
+        warn('Connection error, will retry:', err?.message || err);
       }
     };
 

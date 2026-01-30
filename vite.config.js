@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       // Optimize chunk splitting
       rollupOptions: {
+        input: './index.html',
         output: {
           manualChunks: (id) => {
             // Separate vendor chunks
@@ -34,7 +35,21 @@ export default defineConfig(({ mode }) => {
           },
           // Ensure proper function names are preserved
           format: 'es',
+          // Preserve function names to avoid minification issues
+          generatedCode: {
+            constBindings: false,
+          },
         },
+        // Exclude dev server and test files in production
+        ...(isProduction && {
+          external: (id) => {
+            // Exclude any dev server related modules
+            return id.includes('vite/client') || 
+                   id.includes('@vitejs/plugin-react') ||
+                   id.includes('reload.js') ||
+                   id.includes('/@vite/');
+          },
+        }),
       },
       // Ensure dev server code is not included in production
       commonjsOptions: {
