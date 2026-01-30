@@ -1,0 +1,4 @@
+# Ignore Vercel cache
+.vercel
+node_modules/.vite
+.cache

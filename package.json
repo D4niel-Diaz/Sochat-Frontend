@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:clean": "rm -rf node_modules/.vite dist && vite build",
+    "build:force": "rm -rf node_modules/.vite dist .vercel && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
