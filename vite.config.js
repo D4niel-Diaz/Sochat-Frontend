@@ -6,57 +6,81 @@ export default defineConfig(({ mode }) => {
   const isProduction = mode === 'production';
   
   return {
-    plugins: [react()],
+    plugins: [
+      react({
+        // Exclude HMR in production
+        ...(isProduction && {
+          jsxRuntime: 'automatic',
+        }),
+      }),
+    ],
     build: {
       // Disable source maps in production for smaller bundle
       sourcemap: false,
       // Optimize chunk splitting
       rollupOptions: {
         output: {
-          manualChunks: {
-            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-            'socket-vendor': ['socket.io-client'],
+          manualChunks: (id) => {
+            // Separate vendor chunks
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+                return 'react-vendor';
+              }
+              if (id.includes('socket.io')) {
+                return 'socket-vendor';
+              }
+              return 'vendor';
+            }
           },
+          // Ensure proper function names are preserved
+          format: 'es',
         },
       },
       // Ensure dev server code is not included in production
       commonjsOptions: {
         include: [/node_modules/],
       },
-      // Minify in production
+      // Minify in production with better settings
       minify: isProduction ? 'esbuild' : false,
+      // Target modern browsers for better optimization
+      target: 'esnext',
+      // Ensure proper module format
+      modulePreload: false,
     },
     // Disable HMR in production builds
     define: {
       'import.meta.env.DEV': JSON.stringify(!isProduction),
       'import.meta.env.PROD': JSON.stringify(isProduction),
+      'import.meta.hot': isProduction ? 'undefined' : undefined,
     },
     // Only enable dev server in development
-    server: isProduction ? undefined : {
-      port: 5173,
-      strictPort: false,
-      hmr: {
+    ...(isProduction ? {} : {
+      server: {
         port: 5173,
-      },
-      proxy: {
-        '/api': {
-          target: 'http://127.0.0.1:8000',
-          changeOrigin: true,
-          secure: false,
-          configure: (proxy, options) => {
-            proxy.on('proxyReq', (proxyReq, req, res) => {
-              console.log('🔄 Proxying request:', req.method, req.url, 'to', options.target);
-            });
-            proxy.on('proxyRes', (proxyRes, req, res) => {
-              console.log('✅ Proxy response:', proxyRes.statusCode, req.url);
-            });
-            proxy.on('error', (err, req, res) => {
-              console.error('❌ Proxy error:', err.message, req.url);
-            });
+        strictPort: false,
+        hmr: {
+          port: 5173,
+        },
+        proxy: {
+          '/api': {
+            target: 'http://127.0.0.1:8000',
+            changeOrigin: true,
+            secure: false,
+            configure: (proxy, options) => {
+              proxy.on('proxyReq', (proxyReq, req, res) => {
+                console.log('🔄 Proxying request:', req.method, req.url, 'to', options.target);
+              });
+              proxy.on('proxyRes', (proxyRes, req, res) => {
+                console.log('✅ Proxy response:', proxyRes.statusCode, req.url);
+              });
+              proxy.on('error', (err, req, res) => {
+                console.error('❌ Proxy error:', err.message, req.url);
+              });
+            }
           }
         }
       }
-    },
+    }),
     test: {
       globals: true,
       environment: 'jsdom',
