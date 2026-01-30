@@ -1,7 +1,25 @@
 import { io } from 'socket.io-client';
 import { log, error, warn } from '../utils/logger';
 
-const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:3001';
+// WebSocket URL - use environment variable or default
+// In production, this should be set to your WebSocket server URL
+// Convert https:// to wss:// and http:// to ws:// automatically
+const getWebSocketURL = () => {
+  const url = import.meta.env.VITE_WEBSOCKET_URL || 
+    (import.meta.env.PROD ? 'wss://your-websocket-domain.com' : 'http://localhost:3001');
+  
+  // Convert https:// to wss:// and http:// to ws://
+  if (url.startsWith('https://')) {
+    return url.replace('https://', 'wss://');
+  }
+  if (url.startsWith('http://')) {
+    return url.replace('http://', 'ws://');
+  }
+  // If already ws:// or wss://, return as is
+  return url;
+};
+
+const WEBSOCKET_URL = getWebSocketURL();
 
 // Singleton socket instance
 let socket = null;
