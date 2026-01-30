@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client';
-import { log, error, warn } from '../utils/logger';
+import { log, error as logError, warn as logWarn } from '../utils/logger';
 
 // WebSocket URL - use environment variable or default
 // In production, this should be set to your WebSocket server URL
@@ -29,9 +29,10 @@ const WEBSOCKET_URL = getWebSocketURL();
 let socket = null;
 let connectionPromise = null;
 let reconnectAttempts = 0;
+let isConnecting = false; // CRITICAL: Track if connection is in progress
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 1000;
-const CONNECT_TIMEOUT_MS = 10000;
+const CONNECT_TIMEOUT_MS = 15000; // Increased from 10s to 15s for slower connections
 
 // State tracking
 let currentSessionToken = null;
@@ -45,6 +46,38 @@ let shouldBeInPresencePool = false;
 // Event handlers storage
 const eventHandlers = new Map();
 
+// Helper to set up socket event listeners (only called once per socket)
+function setupSocketEventListeners() {
+  if (!socket) return;
+
+  socket.on('disconnect', (reason) => {
+    log('Socket disconnected:', reason);
+  });
+
+  socket.io.on('reconnect_attempt', (attemptNumber) => {
+    reconnectAttempts = attemptNumber;
+    log(`Reconnection attempt ${attemptNumber}/${MAX_RECONNECT_ATTEMPTS}`);
+  });
+
+  socket.io.on('reconnect', (attemptNumber) => {
+    log(`Reconnected after ${attemptNumber} attempts`);
+    reconnectAttempts = 0;
+    resubscribeEvents();
+  });
+
+  socket.io.on('reconnect_failed', () => {
+    logError('Reconnection failed. WebSocket server may be unavailable.');
+  });
+
+  socket.io.on('error', (err) => {
+    logError('Socket.IO error:', err);
+  });
+
+  socket.io.on('reconnect_error', (err) => {
+    logError('Reconnection error:', err);
+  });
+}
+
 /**
  * Initialize Socket.IO connection
  * @param {string} sessionToken - Guest session token
@@ -52,13 +85,39 @@ const eventHandlers = new Map();
  * @returns {Promise<Socket>}
  */
 export const connectSocket = async (sessionToken, guestId) => {
+  // CRITICAL: Prevent multiple simultaneous connection attempts
+  if (isConnecting && connectionPromise) {
+    logWarn('Connection already in progress, returning existing promise');
+    return connectionPromise;
+  }
+
+  // If socket exists and is connected with same credentials, reuse it immediately
+  if (socket && socket.connected && 
+      socket.auth?.token === sessionToken && 
+      socket.auth?.guestId === guestId) {
+    log('Reusing existing connected socket');
+    return Promise.resolve(socket);
+  }
+  
+  // If socket exists but disconnected or wrong credentials, clean it up first
+  if (socket && (!socket.connected || socket.auth?.token !== sessionToken)) {
+    logWarn('Cleaning up existing socket before reconnecting');
+    try {
+      socket.disconnect();
+      socket.removeAllListeners();
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+    socket = null;
+    connectionPromise = null;
+  }
+
+  // Mark as connecting
+  isConnecting = true;
   currentSessionToken = sessionToken;
   currentGuestId = guestId;
 
-  if (socket && socket.connected) {
-    return socket;
-  }
-
+  // Create new socket if needed
   if (!socket) {
     socket = io(WEBSOCKET_URL, {
       transports: ['websocket', 'polling'],
@@ -66,47 +125,19 @@ export const connectSocket = async (sessionToken, guestId) => {
       reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
       reconnectionDelay: RECONNECT_DELAY,
       reconnectionDelayMax: 10000,
-      timeout: 20000,
+      timeout: 30000, // Increased from 20s to 30s for slower connections
+      forceNew: false, // Reuse existing connection if available
       auth: {
         token: sessionToken,
         guestId: guestId
       }
     });
 
-    socket.on('disconnect', (reason) => {
-      log('Socket disconnected:', reason);
-    });
-
-    socket.io.on('reconnect_attempt', (attemptNumber) => {
-      reconnectAttempts = attemptNumber;
-      log(`Reconnection attempt ${attemptNumber}/${MAX_RECONNECT_ATTEMPTS}`);
-    });
-
-    socket.io.on('reconnect', (attemptNumber) => {
-      log(`Reconnected after ${attemptNumber} attempts`);
-      reconnectAttempts = 0;
-      resubscribeEvents();
-    });
-
-    socket.io.on('reconnect_failed', () => {
-      error('Reconnection failed. WebSocket server may be unavailable.');
-    });
-
-    // Handle connection errors more gracefully
-    socket.io.on('error', (err) => {
-      error('Socket.IO error:', err);
-    });
-
-    // Handle transport errors
-    socket.io.on('reconnect_error', (err) => {
-      error('Reconnection error:', err);
-    });
+    // Set up event listeners (only once per socket instance)
+    setupSocketEventListeners();
   } else {
-    socket.auth = {
-      token: sessionToken,
-      guestId: guestId
-    };
-
+    // Update auth and reconnect if needed
+    socket.auth = { token: sessionToken, guestId: guestId };
     if (!socket.connected) {
       socket.connect();
     }
@@ -117,39 +148,61 @@ export const connectSocket = async (sessionToken, guestId) => {
   }
 
   connectionPromise = new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
+    let timeoutId = null;
+    let isResolved = false;
+
+    const cleanup = () => {
+      isConnecting = false; // CRITICAL: Reset connection flag
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onConnectError);
       connectionPromise = null;
-      reject(new Error('Socket connection timeout'));
+    };
+
+    timeoutId = setTimeout(() => {
+      if (!isResolved) {
+        cleanup();
+        reject(new Error('Socket connection timeout'));
+      }
     }, CONNECT_TIMEOUT_MS);
 
     const onConnect = () => {
-      clearTimeout(timeoutId);
-      socket.off('connect', onConnect);
-      socket.off('connect_error', onConnectError);
+      if (isResolved) return;
+      isResolved = true;
+      cleanup();
 
       log('Socket connected');
       reconnectAttempts = 0;
       isIntentionalDisconnect = false;
-      connectionPromise = null;
       resolve(socket);
     };
 
     const onConnectError = (err) => {
-      error('Socket connection error:', err);
+      logError('Socket connection error:', err);
 
       // Handle specific error types
       if (err?.message?.includes('Authentication failed')) {
-        clearTimeout(timeoutId);
-        socket.off('connect', onConnect);
-        socket.off('connect_error', onConnectError);
-        connectionPromise = null;
-        reject(new Error('Authentication failed. Check session token.'));
+        if (!isResolved) {
+          isResolved = true;
+          cleanup();
+          reject(new Error('Authentication failed. Check session token.'));
+        }
+      } else if (err?.message?.includes('Too many connections')) {
+        // Connection limit error - reject immediately with helpful message
+        if (!isResolved) {
+          isResolved = true;
+          cleanup();
+          reject(new Error(err.message || 'Too many connections. Please close other tabs and try again.'));
+        }
       } else if (err?.message?.includes('timeout') || err?.type === 'TransportError') {
         // Don't reject on timeout/transport errors - let reconnection handle it
-        warn('Connection timeout/transport error. Will retry...');
+        logWarn('Connection timeout/transport error. Will retry...');
       } else {
         // For other errors, log but don't reject immediately
-        warn('Connection error, will retry:', err?.message || err);
+        logWarn('Connection error, will retry:', err?.message || err);
       }
     };
 
@@ -166,18 +219,31 @@ export const connectSocket = async (sessionToken, guestId) => {
 };
 
 /**
+ * Get current session token (for checking if socket matches)
+ */
+export const getCurrentSessionToken = () => currentSessionToken;
+
+/**
  * Resubscribe to all events after reconnection
  */
 const resubscribeEvents = () => {
+  if (!socket || !socket.connected) {
+    logWarn('Cannot resubscribe: socket not connected');
+    return;
+  }
+
   // Re-join presence pool if was waiting
   if (shouldBeInPresencePool) {
     socket.emit('presence:join');
+    log('Rejoined presence pool after reconnection');
   }
 
-  // Re-join chat rooms
+  // Re-join chat rooms - notify server of active chats
   messageSequenceNumbers.forEach((_, chatId) => {
-    // Chat rooms are auto-managed by Socket.IO rooms
-    // Just need to ensure we're connected
+    // Emit a rejoin event for each active chat
+    // The server should handle this and restore room membership
+    socket.emit('chat:rejoin', { chatId });
+    log(`Rejoined chat room: ${chatId}`);
   });
 };
 
@@ -238,7 +304,7 @@ export const getConnectionStatus = () => ({
  */
 export const joinPresencePool = () => {
   if (!socket || !socket.connected) {
-    warn('Cannot join presence pool: not connected');
+    logWarn('Cannot join presence pool: not connected');
     return;
   }
 
@@ -252,7 +318,7 @@ export const joinPresencePool = () => {
  */
 export const leavePresencePool = () => {
   if (!socket || !socket.connected) {
-    warn('Cannot leave presence pool: not connected');
+    logWarn('Cannot leave presence pool: not connected');
     return;
   }
 
@@ -413,7 +479,7 @@ export const sendMessage = async (chatId, content) => {
  */
 export const sendTyping = (chatId, isTyping) => {
   if (!socket || !socket.connected) {
-    warn('Cannot send typing indicator: not connected');
+    logWarn('Cannot send typing indicator: not connected');
     return;
   }
 

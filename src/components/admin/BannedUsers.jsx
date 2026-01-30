@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { adminService } from "../../api/services/adminService";
 import { Shield, Ban, UserCheck } from "lucide-react";
 import toast from "react-hot-toast";
+import { error as logError } from "../../utils/logger";
 
 const BannedUsers = () => {
   const [bannedGuests, setBannedGuests] = useState([]);
@@ -17,8 +18,9 @@ const BannedUsers = () => {
 
       const responseData = response.data.data || response.data;
       setBannedGuests(responseData || []);
-    } catch (error) {
-      error("Failed to fetch banned guests:", error);
+    } catch (err) {
+      logError("Failed to fetch banned guests:", err);
+      toast.error("Failed to load banned users");
     } finally {
       setIsLoading(false);
     }

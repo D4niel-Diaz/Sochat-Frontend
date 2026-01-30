@@ -3,7 +3,7 @@ import { chatService } from "../api/services/chatService";
 import { presenceService } from "../api/services/presenceService";
 import { useGuest } from "./GuestContext";
 import toast from "react-hot-toast";
-import { log, error, warn } from "../utils/logger";
+import { log, error as logError, warn as logWarn } from "../utils/logger";
 import {
   connectSocket,
   disconnectSocket,
@@ -16,6 +16,7 @@ import {
   sendMessage as sendSocketMessage,
   endChat as endSocketChat,
   isConnected,
+  getCurrentSessionToken,
 } from "../lib/socketClient";
 
 const ChatContext = createContext(null);
@@ -88,7 +89,7 @@ export const ChatProvider = ({ children }) => {
       // Handle both response formats
       const responseData = response.data.data || response.data;
       if (!responseData || !responseData.status) {
-        error('❌ Invalid start chat response structure:', response.data);
+        logError('❌ Invalid start chat response structure:', response.data);
         throw new Error('Invalid response from server');
       }
 
@@ -243,7 +244,7 @@ export const ChatProvider = ({ children }) => {
 
       // CRITICAL: Verify chat is still active before ending
       if (status !== "matched" && status !== "active") {
-        warn('Cannot end chat: not in active chat', { status, chatId });
+        logWarn('Cannot end chat: not in active chat', { status, chatId });
         return;
       }
 
@@ -330,7 +331,7 @@ export const ChatProvider = ({ children }) => {
       previousChatIdRef.current = null;
       stopPolling();
 
-      toast.info("Search cancelled");
+      toast("Search cancelled", { icon: "ℹ️" });
     } catch (err) {
       setError(err.message);
       toast.error(err.message);
@@ -343,7 +344,24 @@ export const ChatProvider = ({ children }) => {
     if (!sessionToken || !chatId || !content.trim()) return;
 
     try {
-      const message = await sendSocketMessage(chatId, content.trim());
+      let message;
+      
+      // Try WebSocket first, fallback to HTTP API if not connected
+      if (isWebSocketConnected) {
+        try {
+          message = await sendSocketMessage(chatId, content.trim());
+        } catch (socketErr) {
+          // If WebSocket fails, fallback to HTTP API
+          logWarn("WebSocket send failed, falling back to HTTP API:", socketErr);
+          const response = await chatService.sendMessage(sessionToken, chatId, content.trim());
+          message = response.data.data || response.data;
+        }
+      } else {
+        // Use HTTP API when WebSocket is not connected
+        log("WebSocket not connected, using HTTP API to send message");
+        const response = await chatService.sendMessage(sessionToken, chatId, content.trim());
+        message = response.data.data || response.data;
+      }
 
       const newMessage = {
         message_id: message.message_id,
@@ -363,7 +381,7 @@ export const ChatProvider = ({ children }) => {
       toast.error(err.message);
       throw err;
     }
-  }, [sessionToken, chatId]);
+  }, [sessionToken, chatId, isWebSocketConnected]);
 
   useEffect(() => {
     if (status === "waiting" || status === "matched" || status === "active") {
@@ -382,26 +400,59 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     if (!sessionToken || !guestId) return;
 
-    connectSocket(sessionToken, guestId)
-      .then(() => {
-        setIsWebSocketConnected(true);
-      })
-      .catch((err) => {
-        error("Failed to connect socket:", err);
-        setIsWebSocketConnected(false);
-        toast.error("Real-time features unavailable. Some features may not work.");
-      });
+    // CRITICAL: Use refs to track if component is still mounted
+    let isMounted = true;
+    let connectionAborted = false;
+
+    // CRITICAL: Debounce connection to prevent rapid reconnections
+    const connectionTimeout = setTimeout(() => {
+      if (connectionAborted) return;
+
+      // Check if already connected before attempting new connection
+      if (isConnected() && getCurrentSessionToken() === sessionToken) {
+        if (isMounted) {
+          setIsWebSocketConnected(true);
+        }
+        return;
+      }
+
+      connectSocket(sessionToken, guestId)
+        .then(() => {
+          if (isMounted && !connectionAborted) {
+            setIsWebSocketConnected(true);
+          }
+        })
+        .catch((err) => {
+          if (isMounted && !connectionAborted) {
+            logError("Failed to connect socket:", err);
+            setIsWebSocketConnected(false);
+            
+            // Only show error toast for actual failures, not user-actionable errors
+            if (err.message?.includes('Too many connections')) {
+              // User needs to close tabs - don't spam with toasts
+              logWarn("Too many connections - user should close other tabs");
+            } else {
+              toast.error("Real-time features unavailable. Some features may not work.");
+            }
+          }
+        });
+    }, 100); // Small delay to batch rapid dependency changes
 
     const checkConnectionInterval = setInterval(() => {
-      setIsWebSocketConnected(isConnected());
+      if (isMounted) {
+        setIsWebSocketConnected(isConnected());
+      }
     }, 1000);
 
     // CRITICAL: Start heartbeat to maintain presence
     const startHeartbeat = async () => {
+      if (connectionAborted) return;
       try {
         await presenceService.heartbeat(sessionToken);
       } catch (err) {
-        error("Heartbeat failed:", err);
+        if (isMounted) {
+          logError("Heartbeat failed:", err);
+        }
       }
     };
 
@@ -410,15 +461,20 @@ export const ChatProvider = ({ children }) => {
     // Initial heartbeat
     startHeartbeat();
 
+    // Cleanup function
     return () => {
+      isMounted = false;
+      connectionAborted = true;
+      clearTimeout(connectionTimeout);
       clearInterval(checkConnectionInterval);
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
       }
-      disconnectSocket();
-      // CRITICAL: Notify backend of disconnect
+      // CRITICAL: Only disconnect if this is the last component using the socket
+      // Don't disconnect on every unmount - let the singleton manage it
+      // Only notify backend of disconnect
       presenceService.disconnect(sessionToken).catch((err) => {
-        error("Failed to notify backend of disconnect:", err);
+        logError("Failed to notify backend of disconnect:", err);
       });
     };
   }, [sessionToken, guestId]);
@@ -432,7 +488,7 @@ export const ChatProvider = ({ children }) => {
         if (data.chat_id && data.partner_id) {
           // Don't match with self
           if (data.partner_id === guestId) {
-            warn("Ignoring self-match attempt");
+            logWarn("Ignoring self-match attempt");
             return;
           }
 
@@ -539,7 +595,7 @@ export const ChatProvider = ({ children }) => {
         stopPolling();
 
         // Show notification
-        toast.info("Your chat partner has ended the conversation.");
+        toast("Your chat partner has ended the conversation.", { icon: "ℹ️" });
       } else if (!currentChatId && data.ended_by !== guestId) {
         // We received a chat ended event but we're not in a chat
         // This means we were the one who ended it, or it's an old event

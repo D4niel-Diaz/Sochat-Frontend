@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { adminService } from "../../api/services/adminService";
 import { AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import toast from "react-hot-toast";
+import { error as logError } from "../../utils/logger";
 
 const ReportsList = () => {
   const [reports, setReports] = useState([]);
@@ -18,8 +19,9 @@ const ReportsList = () => {
 
       const responseData = response.data.data || response.data;
       setReports(responseData || []);
-    } catch (error) {
-      error("Failed to fetch reports:", error);
+    } catch (err) {
+      logError("Failed to fetch reports:", err);
+      toast.error("Failed to load reports");
     } finally {
       setIsLoading(false);
     }

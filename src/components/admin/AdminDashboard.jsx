@@ -3,6 +3,8 @@ import { useAdmin } from "../../contexts/AdminContext";
 import { adminService } from "../../api/services/adminService";
 import { Users, MessageSquare, AlertTriangle, Shield } from "lucide-react";
 import { Link } from "react-router-dom";
+import { error as logError } from "../../utils/logger";
+import toast from "react-hot-toast";
 
 const AdminDashboard = () => {
   const { isAuthenticated, name } = useAdmin();
@@ -16,8 +18,9 @@ const AdminDashboard = () => {
 
         const responseData = response.data.data || response.data;
         setMetrics(responseData);
-      } catch (error) {
-        error("Failed to fetch metrics:", error);
+      } catch (err) {
+        logError("Failed to fetch metrics:", err);
+        toast.error("Failed to load dashboard metrics");
       } finally {
         setIsLoading(false);
       }
@@ -57,7 +60,7 @@ const AdminDashboard = () => {
     },
     {
       title: "Total Reports",
-      value: metrics?.total_reports || 0,
+      value: metrics?.total_reports || metrics?.pending_reports || 0,
       icon: AlertTriangle,
       color: "text-warning",
       bgColor: "bg-warning/10",

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { adminService } from "../../api/services/adminService";
 import { MessageSquare, Clock, CheckCircle, Ban } from "lucide-react";
 import toast from "react-hot-toast";
+import { error as logError } from "../../utils/logger";
 
 const ActiveChats = () => {
   const [chats, setChats] = useState([]);
@@ -19,8 +20,9 @@ const ActiveChats = () => {
 
       const responseData = response.data.data || response.data;
       setChats(responseData || []);
-    } catch (error) {
-      error("Failed to fetch chats:", error);
+    } catch (err) {
+      logError("Failed to fetch chats:", err);
+      toast.error("Failed to load active chats");
     } finally {
       setIsLoading(false);
     }
