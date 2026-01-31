@@ -1,10 +1,18 @@
 import axiosInstance from "../config/axios.config";
 
 export const presenceService = {
-  optIn: async (sessionToken) => {
-    const response = await axiosInstance.post("/presence/opt-in", null, {
-      metadata: { sessionToken },
-    });
+  optIn: async (sessionToken, role = "learner", subject = "General", availability = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18]) => {
+    const response = await axiosInstance.post(
+      "/presence/opt-in",
+      {
+        role,
+        subject,
+        availability,
+      },
+      {
+        metadata: { sessionToken },
+      }
+    );
     return response;
   },
 

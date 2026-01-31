@@ -62,7 +62,7 @@ export const ChatProvider = ({ children }) => {
     chatIdRef.current = chatId;
   }, [chatId]);
 
-  const startChat = useCallback(async () => {
+  const startChat = useCallback(async (role = "learner", subject = "General", availability = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18]) => {
     if (!sessionToken || isFetchingRef.current) return;
 
     try {
@@ -70,8 +70,8 @@ export const ChatProvider = ({ children }) => {
       setIsLoading(true);
       setError(null);
 
-      // CRITICAL: Opt in to matching (mutual intent)
-      await presenceService.optIn(sessionToken);
+      // CRITICAL: Opt in to matching (mutual intent) with role/subject/availability
+      await presenceService.optIn(sessionToken, role, subject, availability);
 
       if (isWebSocketConnected) {
         setStatus("waiting");

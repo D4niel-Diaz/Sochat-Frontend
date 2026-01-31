@@ -11,6 +11,10 @@ const GuestLandingPage = () => {
   const navigate = useNavigate();
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [chatError, setChatError] = useState(null);
+  // Default matching preferences (hidden from UI)
+  const role = "learner";
+  const subject = "General";
+  const availability = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
 
   const handleStartChat = async () => {
     if (error || isBanned) {
@@ -20,7 +24,7 @@ const GuestLandingPage = () => {
     setIsStartingChat(true);
     setChatError(null);
     try {
-      await startChat();
+      await startChat(role, subject, availability);
     } catch (err) {
       setChatError(err.message || "Failed to start chat");
       setIsStartingChat(false);
