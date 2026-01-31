@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { guestService } from "../api/services/guestService";
+import { setSessionToken as setAxiosSessionToken } from "../api/config/axios.config";
 import toast from "react-hot-toast";
 import { log, error } from "../utils/logger";
 
@@ -45,6 +46,9 @@ export const GuestProvider = ({ children }) => {
       setSessionToken(responseData.session_token);
       setExpiresAt(responseData.expires_at);
       setIsBanned(false);
+      
+      // Set token in axios config for all future requests
+      setAxiosSessionToken(responseData.session_token);
     } catch (err) {
       // CRITICAL: Provide better error messages for production
       let errorMessage = err.message;
@@ -98,6 +102,9 @@ export const GuestProvider = ({ children }) => {
       }
 
       setExpiresAt(responseData.expires_at);
+      
+      // Update token in axios config
+      setAxiosSessionToken(sessionToken);
     } catch (err) {
       setError(err.message);
       if (err.message.includes("banned")) {

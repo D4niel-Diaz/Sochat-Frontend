@@ -39,11 +39,29 @@ const axiosInstance = axios.create({
   withCredentials: true,
 });
 
+// Store session token in a way that works in production
+let currentSessionToken = null;
+
+// Function to set session token
+export const setSessionToken = (token) => {
+  currentSessionToken = token;
+};
+
+// Function to get session token
+export const getSessionToken = () => currentSessionToken;
+
 axiosInstance.interceptors.request.use(
   (config) => {
-    const sessionToken = config.metadata?.sessionToken;
-    if (sessionToken) {
-      config.headers.Authorization = `Bearer ${sessionToken}`;
+    // Use stored token if Authorization header not already set
+    // Also check metadata for backward compatibility
+    if (!config.headers.Authorization) {
+      const tokenFromMetadata = config.metadata?.sessionToken;
+      const tokenFromStorage = currentSessionToken;
+      const sessionToken = tokenFromMetadata || tokenFromStorage;
+      
+      if (sessionToken) {
+        config.headers.Authorization = `Bearer ${sessionToken}`;
+      }
     }
     // Log request in development
     if (import.meta.env.DEV) {

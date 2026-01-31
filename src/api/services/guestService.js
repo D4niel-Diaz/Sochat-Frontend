@@ -1,4 +1,4 @@
-import axiosInstance from "../config/axios.config";
+import axiosInstance, { setSessionToken } from "../config/axios.config";
 
 export const guestService = {
   createSession: async () => {
@@ -7,9 +7,16 @@ export const guestService = {
   },
 
   refreshSession: async (sessionToken) => {
-    const response = await axiosInstance.post("/guest/refresh", null, {
-      metadata: { sessionToken },
-    });
+    setSessionToken(sessionToken);
+    const response = await axiosInstance.post(
+      "/guest/refresh",
+      null,
+      {
+        headers: {
+          Authorization: `Bearer ${sessionToken}`,
+        },
+      }
+    );
     return response;
   },
 };

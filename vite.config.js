@@ -42,7 +42,10 @@ export default defineConfig(({ mode }) => {
           // Preserve function names to avoid minification issues
           generatedCode: {
             constBindings: false,
+            arrowFunctions: false,
           },
+          // Preserve function names
+          preserveEntrySignatures: 'strict',
         },
         // Exclude dev server and test files in production
         ...(isProduction && {
@@ -69,6 +72,13 @@ export default defineConfig(({ mode }) => {
       target: 'esnext',
       // Ensure proper module format
       modulePreload: false,
+      // Preserve function names to prevent "I is not a function" errors
+      ...(isProduction && {
+        esbuild: {
+          keepNames: true,
+          legalComments: 'none',
+        },
+      }),
     },
     // Disable HMR in production builds
     define: {
