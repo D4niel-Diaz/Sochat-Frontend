@@ -416,6 +416,18 @@ export const ChatProvider = ({ children }) => {
         return;
       }
 
+      // CRITICAL: Validate session token exists before connecting
+      if (!sessionToken || !guestId) {
+        logError("Cannot connect socket: Missing sessionToken or guestId", {
+          hasSessionToken: !!sessionToken,
+          hasGuestId: !!guestId
+        });
+        if (isMounted) {
+          setIsWebSocketConnected(false);
+        }
+        return;
+      }
+
       connectSocket(sessionToken, guestId)
         .then(() => {
           if (isMounted && !connectionAborted) {
@@ -431,6 +443,10 @@ export const ChatProvider = ({ children }) => {
             if (err.message?.includes('Too many connections')) {
               // User needs to close tabs - don't spam with toasts
               logWarn("Too many connections - user should close other tabs");
+            } else if (err.message?.includes('Invalid session') || err.message?.includes('Authentication failed')) {
+              // Session invalid - suggest refresh
+              logError("Session invalid - user should refresh page");
+              toast.error("Session expired. Please refresh the page.");
             } else {
               toast.error("Real-time features unavailable. Some features may not work.");
             }

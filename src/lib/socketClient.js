@@ -2,28 +2,69 @@ import { io } from 'socket.io-client';
 import { log, error as logError, warn as logWarn } from '../utils/logger';
 
 // WebSocket URL - use environment variable or default
-// In production, this should be set to your WebSocket server URL
+// CRITICAL: Evaluate at runtime, not build time, to ensure proper production URL
 // Convert https:// to wss:// and http:// to ws:// automatically
 const getWebSocketURL = () => {
   // Default production WebSocket URL
   const defaultProdUrl = 'https://sochat-websocket-server.onrender.com';
   const defaultDevUrl = 'http://localhost:3001';
   
-  const url = import.meta.env.VITE_WEBSOCKET_URL || 
-    (import.meta.env.PROD ? defaultProdUrl : defaultDevUrl);
+  // CRITICAL: Check environment at runtime
+  // import.meta.env.PROD might not be properly replaced in some builds
+  const isProduction = (() => {
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+        return import.meta.env.PROD === true || import.meta.env.MODE === 'production';
+      }
+      // Fallback: check if we're in a production environment
+      return typeof window !== 'undefined' && 
+             window.location.hostname !== 'localhost' && 
+             window.location.hostname !== '127.0.0.1';
+    } catch {
+      return false;
+    }
+  })();
+  
+  // Check for explicit environment variable first
+  let url = null;
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_WEBSOCKET_URL) {
+      url = import.meta.env.VITE_WEBSOCKET_URL;
+    }
+  } catch (e) {
+    // Ignore errors accessing import.meta.env
+  }
+  
+  // Fallback to defaults based on environment
+  if (!url) {
+    url = isProduction ? defaultProdUrl : defaultDevUrl;
+  }
   
   // Convert https:// to wss:// and http:// to ws://
-  if (url.startsWith('https://')) {
-    return url.replace('https://', 'wss://');
+  if (url && typeof url === 'string') {
+    if (url.startsWith('https://')) {
+      return url.replace('https://', 'wss://');
+    }
+    if (url.startsWith('http://')) {
+      return url.replace('http://', 'ws://');
+    }
+    // If already ws:// or wss://, return as is
+    return url;
   }
-  if (url.startsWith('http://')) {
-    return url.replace('http://', 'ws://');
-  }
-  // If already ws:// or wss://, return as is
-  return url;
+  
+  // Final fallback
+  return isProduction ? 'wss://sochat-websocket-server.onrender.com' : 'ws://localhost:3001';
 };
 
-const WEBSOCKET_URL = getWebSocketURL();
+// CRITICAL: Don't evaluate at module load time - evaluate when needed
+// This ensures proper runtime environment detection
+let WEBSOCKET_URL_CACHE = null;
+const getWebSocketURLCached = () => {
+  if (!WEBSOCKET_URL_CACHE) {
+    WEBSOCKET_URL_CACHE = getWebSocketURL();
+  }
+  return WEBSOCKET_URL_CACHE;
+};
 
 // Singleton socket instance
 let socket = null;
@@ -119,7 +160,9 @@ export const connectSocket = async (sessionToken, guestId) => {
 
   // Create new socket if needed
   if (!socket) {
-    socket = io(WEBSOCKET_URL, {
+    // CRITICAL: Get WebSocket URL at runtime, not build time
+    const websocketUrl = getWebSocketURLCached();
+    socket = io(websocketUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
@@ -127,10 +170,19 @@ export const connectSocket = async (sessionToken, guestId) => {
       reconnectionDelayMax: 10000,
       timeout: 30000, // Increased from 20s to 30s for slower connections
       forceNew: false, // Reuse existing connection if available
+      // CRITICAL: Production WebSocket settings
+      upgrade: true, // Allow transport upgrades
+      rememberUpgrade: true, // Remember transport preference
+      // CRITICAL: Add path if needed (default is /socket.io/)
+      path: '/socket.io/',
       auth: {
         token: sessionToken,
         guestId: guestId
-      }
+      },
+      // CRITICAL: Add extra headers for debugging
+      extraHeaders: import.meta.env.DEV ? {
+        'X-Debug-Session': 'true'
+      } : {}
     });
 
     // Set up event listeners (only once per socket instance)

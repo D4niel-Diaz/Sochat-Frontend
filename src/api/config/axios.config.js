@@ -7,7 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
 
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 30000, // Increased from 10s to 30s for slower connections
   withCredentials: true,
 });
 
@@ -16,6 +16,10 @@ axiosInstance.interceptors.request.use(
     const sessionToken = config.metadata?.sessionToken;
     if (sessionToken) {
       config.headers.Authorization = `Bearer ${sessionToken}`;
+    }
+    // Log request in development
+    if (import.meta.env.DEV) {
+      log(`🔄 API Request: ${config.method?.toUpperCase()} ${config.url}`);
     }
     return config;
   },
@@ -65,6 +69,15 @@ axiosInstance.interceptors.response.use(
       }
     } else if (apiError.request) {
       error('❌ No response received:', apiError.request);
+      
+      // Provide more helpful error messages
+      if (apiError.code === 'ECONNABORTED' || apiError.message?.includes('timeout')) {
+        const baseUrl = apiError.config?.baseURL || 'backend';
+        throw new Error(`Backend server timeout. Is the backend running at ${baseUrl}? Check: http://localhost:8000/api/v1/health`);
+      } else if (apiError.code === 'ECONNREFUSED' || apiError.code === 'ERR_NETWORK') {
+        throw new Error("Cannot connect to backend server. Please ensure the backend is running on port 8000.");
+      }
+      
       throw new Error("Connection lost. Please check your internet connection.");
     } else {
       error('❌ Request setup error:', apiError.message);

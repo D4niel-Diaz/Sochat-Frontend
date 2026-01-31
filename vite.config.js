@@ -47,7 +47,9 @@ export default defineConfig(({ mode }) => {
             return id.includes('vite/client') || 
                    id.includes('@vitejs/plugin-react') ||
                    id.includes('reload.js') ||
-                   id.includes('/@vite/');
+                   id.includes('/@vite/') ||
+                   id.includes('@vite/client') ||
+                   id.includes('vite/dist/client');
           },
         }),
       },
@@ -66,7 +68,10 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.DEV': JSON.stringify(!isProduction),
       'import.meta.env.PROD': JSON.stringify(isProduction),
+      'import.meta.env.MODE': JSON.stringify(mode),
       'import.meta.hot': isProduction ? 'undefined' : undefined,
+      // CRITICAL: Remove any reload.js references
+      '__RELOAD_JS__': isProduction ? 'undefined' : undefined,
     },
     // Only enable dev server in development
     ...(isProduction ? {} : {
