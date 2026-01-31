@@ -12,6 +12,10 @@ export default defineConfig(({ mode }) => {
         ...(isProduction && {
           jsxRuntime: 'automatic',
         }),
+        // CRITICAL: Disable HMR completely in production
+        ...(isProduction ? {
+          exclude: /node_modules/,
+        } : {}),
       }),
     ],
     build: {
@@ -49,7 +53,9 @@ export default defineConfig(({ mode }) => {
                    id.includes('reload.js') ||
                    id.includes('/@vite/') ||
                    id.includes('@vite/client') ||
-                   id.includes('vite/dist/client');
+                   id.includes('vite/dist/client') ||
+                   id.includes('vite/hot') ||
+                   id.includes('vite/env');
           },
         }),
       },

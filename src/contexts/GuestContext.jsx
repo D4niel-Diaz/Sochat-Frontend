@@ -26,15 +26,9 @@ export const GuestProvider = ({ children }) => {
       setIsLoading(true);
       setError(null);
       
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Connection timeout. Please check your internet connection.")), 10000);
-      });
-      
-      const response = await Promise.race([
-        guestService.createSession(),
-        timeoutPromise
-      ]);
+      // CRITICAL: Don't add extra timeout - axios already has 30s timeout
+      // The extra timeout was causing premature failures in production
+      const response = await guestService.createSession();
 
       log('🔍 Full response structure:', response);
       log('🔍 response.data:', response.data);
@@ -52,12 +46,38 @@ export const GuestProvider = ({ children }) => {
       setExpiresAt(responseData.expires_at);
       setIsBanned(false);
     } catch (err) {
-      setError(err.message);
+      // CRITICAL: Provide better error messages for production
+      let errorMessage = err.message;
+      
+      // Check if it's a production backend connection issue
+      if (err.message?.includes('timeout') || err.message?.includes('ECONNABORTED')) {
+        const isProduction = typeof window !== 'undefined' && 
+                            window.location.hostname !== 'localhost' && 
+                            window.location.hostname !== '127.0.0.1';
+        
+        if (isProduction) {
+          errorMessage = "Unable to connect to server. The backend may be starting up or experiencing issues. Please try again in a moment.";
+        } else {
+          errorMessage = "Backend server timeout. Is the backend running? Check: http://localhost:8000/api/v1/health";
+        }
+      } else if (err.message?.includes('ECONNREFUSED') || err.message?.includes('ERR_NETWORK')) {
+        const isProduction = typeof window !== 'undefined' && 
+                            window.location.hostname !== 'localhost' && 
+                            window.location.hostname !== '127.0.0.1';
+        
+        if (isProduction) {
+          errorMessage = "Cannot connect to server. Please check if the backend service is available.";
+        } else {
+          errorMessage = "Cannot connect to backend server. Please ensure the backend is running on port 8000.";
+        }
+      }
+      
+      setError(errorMessage);
       if (err.message.includes("banned")) {
         setIsBanned(true);
       }
       // Don't show toast here - let the UI handle it gracefully
-      throw err;
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }

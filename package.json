@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "clean": "node clean-build.js",
-    "build:clean": "node clean-build.js && vite build",
+    "build:clean": "node clean-build.js && vite build && node -e \"require('./clean-build.js').verifyProductionBuild()\"",
     "build:force": "node clean-build.js && rm -rf .vercel && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
