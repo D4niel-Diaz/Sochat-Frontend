@@ -422,24 +422,30 @@ export const onMessage = (chatId, callback) => {
   const handler = (data) => {
     log('Message received:', data);
 
+    // FIX: Guard against messages arriving for a different chat.
+    // The server emits to connected clients, not to rooms, so a stale
+    // listener or a rejoin could deliver cross-chat messages.
+    if (data.chat_id !== undefined && Number(data.chat_id) !== Number(chatId)) {
+      log(`Ignoring message for chat ${data.chat_id} (active chat: ${chatId})`);
+      return;
+    }
+
     // Handle message ordering
-    const lastSequence = messageSequenceNumbers.get(chatId) || 0;
+    const lastSequence    = messageSequenceNumbers.get(chatId) || 0;
     const currentSequence = data.sequence_number || 0;
 
     if (currentSequence === lastSequence + 1) {
       // In-order message
       messageSequenceNumbers.set(chatId, currentSequence);
       callback(data);
-
-      // Process any buffered messages
       processBufferedMessages(chatId, callback);
     } else if (currentSequence > lastSequence + 1) {
-      // Out-of-order message - buffer it
+      // Out-of-order message — buffer it
       log(`Buffering out-of-order message (expected ${lastSequence + 1}, got ${currentSequence})`);
       bufferMessage(chatId, data, callback);
     } else {
-      // Duplicate or old message - ignore
-      log(`Ignoring duplicate/old message (expected ${lastSequence + 1}, got ${currentSequence})`);
+      // Duplicate or old message — ignore
+      log(`Ignoring duplicate/old message (sequence ${currentSequence})`);
     }
   };
 
@@ -514,11 +520,18 @@ export const sendMessage = async (chatId, content) => {
   }
 
   return new Promise((resolve, reject) => {
+    // FIX: Add timeout so the promise does not hang forever if the server
+    // never acknowledges (network drop, server bug, etc.).
+    const ackTimeout = setTimeout(() => {
+      reject(new Error('Message send timeout — no acknowledgment from server'));
+    }, 10000);
+
     socket.emit('message:send', { chatId, content }, (response) => {
-      if (response.success) {
+      clearTimeout(ackTimeout);
+      if (response?.success) {
         resolve(response.message);
       } else {
-        reject(new Error(response.error || 'Failed to send message'));
+        reject(new Error(response?.error || 'Failed to send message'));
       }
     });
   });
@@ -634,3 +647,5 @@ export const endChat = async (chatId) => {
     });
   });
 };
+
+
