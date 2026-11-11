@@ -240,8 +240,8 @@ const GuestLandingPage = () => {
                 <dt className="st-display text-xl font-bold">Your chats</dt>
                 <dd className="mt-1 text-muted">
                   {/* Enforced by the backend's chats:prune-messages job (config/moderation.php) */}
-                  Messages are deleted 1 hour after a chat ends. If a chat is reported, we keep it until admins have
-                  reviewed it.
+                  Messages are deleted 1 hour after a chat ends. Reported chats, and messages flagged for sharing
+                  contact info, are kept until admins review them (30 days at most).
                 </dd>
               </div>
               <div className="pt-5">
