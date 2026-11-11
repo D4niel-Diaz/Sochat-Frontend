@@ -319,11 +319,11 @@ const HeroPreview = () => (
         <TypingBubble className="mt-3 self-start" />
       </div>
       <div className="flex items-center gap-2 border-t-2 border-line bg-paper px-4 py-3">
-        <span className="flex h-11 flex-1 items-center rounded-full border-2 border-line bg-mist px-4 text-[15px] text-muted-2">
+        <span className="flex h-11 flex-1 items-center rounded-full bg-ink px-4 text-[15px] text-onink/70">
           Type a message
         </span>
-        <span className="inline-flex size-11 items-center justify-center rounded-full bg-ink">
-          <Send size={18} className="text-pili" strokeWidth={2.5} />
+        <span className="inline-flex size-11 items-center justify-center rounded-full bg-pili text-ink">
+          <Send size={18} strokeWidth={2.5} />
         </span>
       </div>
     </div>

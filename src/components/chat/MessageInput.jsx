@@ -71,7 +71,7 @@ const MessageInput = () => {
           <input
             id="message-input"
             type="text"
-            className="h-[52px] min-w-0 flex-1 rounded-full border-2 border-line bg-mist px-5 text-[17px] text-ink placeholder:text-muted-2 focus:border-ink disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-[52px] min-w-0 flex-1 rounded-full border-2 border-ink bg-ink px-5 text-[17px] text-white caret-pili placeholder:text-onink/70 focus:border-pili disabled:cursor-not-allowed disabled:opacity-60"
             placeholder={placeholder}
             value={text}
             onChange={handleChange}
@@ -82,13 +82,13 @@ const MessageInput = () => {
           />
           <button
             type="submit"
-            className="inline-flex size-[52px] shrink-0 items-center justify-center rounded-full bg-ink transition-[background-color,transform] duration-100 hover:bg-ink-hover active:scale-95 active:bg-ink-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex size-[52px] shrink-0 items-center justify-center rounded-full bg-pili text-ink transition-[background-color,transform] duration-100 hover:bg-pili-hover active:scale-95 active:bg-pili-hover disabled:cursor-not-allowed disabled:opacity-50"
             // Keep focus in the input so the phone keyboard stays open between messages
             onMouseDown={(e) => e.preventDefault()}
             disabled={!text.trim() || isSending || !canSend}
             aria-label="Send"
           >
-            <Send size={21} strokeWidth={2.5} className="text-pili" aria-hidden="true" />
+            <Send size={21} strokeWidth={2.5} aria-hidden="true" />
           </button>
         </div>
         {/* Hint is desktop-only; on phones the row only appears for the length counter */}
