@@ -26,27 +26,36 @@ beforeEach(() => {
 });
 
 describe("ChatControls", () => {
-  it("New Match goes through findNewMatch (ends the current chat first)", async () => {
-    render(<ChatControls />);
-    await userEvent.click(screen.getByRole("button", { name: /find new match/i }));
-    expect(state.findNewMatch).toHaveBeenCalled();
+  it("Next stranger goes through findNewMatch with the chosen topic", async () => {
+    const preferences = { role: "learner", subject: "Music", availability: [] };
+    render(<ChatControls nickname="Quiet Butanding" preferences={preferences} />);
+    await userEvent.click(screen.getByRole("button", { name: /next stranger/i }));
+    expect(state.findNewMatch).toHaveBeenCalledWith(preferences);
   });
 
-  it("requires a 10-character reason before a report can be submitted", async () => {
-    render(<ChatControls />);
-    await userEvent.click(screen.getByRole("button", { name: /report user/i }));
+  it("needs a reason before a report can be sent, then sends it", async () => {
+    const onReported = vi.fn();
+    render(<ChatControls nickname="Quiet Butanding" onReported={onReported} />);
+    await userEvent.click(screen.getByRole("button", { name: /report quiet butanding/i }));
 
-    const reason = screen.getByLabelText(/describe what happened/i);
-    const submit = screen.getByRole("button", { name: /submit report/i });
-
-    await userEvent.type(reason, "short");
+    expect(screen.getByRole("dialog", { name: /report quiet butanding/i })).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: /send report/i });
     expect(submit).toBeDisabled();
 
-    await userEvent.type(reason, " but now long enough");
+    await userEvent.click(screen.getByLabelText("Spam or selling"));
     expect(submit).toBeEnabled();
     await userEvent.click(submit);
 
-    expect(reportService.submitReport).toHaveBeenCalledWith("token", 3, "short but now long enough");
+    expect(reportService.submitReport).toHaveBeenCalledWith("token", 3, "Spam or selling");
+    expect(onReported).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes the report dialog with Escape", async () => {
+    render(<ChatControls />);
+    await userEvent.click(screen.getByRole("button", { name: /report/i }));
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("renders nothing outside an active chat", () => {

@@ -12,7 +12,7 @@ let sendMessage;
 beforeEach(() => {
   vi.useFakeTimers();
   sendMessage = vi.fn().mockResolvedValue(undefined);
-  useChat.mockReturnValue({ sendMessage, status: "matched", chatId: 7, isPartnerTyping: false });
+  useChat.mockReturnValue({ sendMessage, status: "matched", chatId: 7 });
 });
 
 afterEach(() => {
@@ -50,7 +50,7 @@ describe("MessageInput", () => {
 
     fireEvent.change(input, { target: { value: "hello" } });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
     });
 
     expect(sendMessage).toHaveBeenCalledWith("hello");
@@ -58,7 +58,7 @@ describe("MessageInput", () => {
   });
 
   it("is disabled until matched", () => {
-    useChat.mockReturnValue({ sendMessage, status: "waiting", chatId: null, isPartnerTyping: false });
+    useChat.mockReturnValue({ sendMessage, status: "waiting", chatId: null });
     render(<MessageInput />);
 
     expect(screen.getByLabelText("Message")).toBeDisabled();

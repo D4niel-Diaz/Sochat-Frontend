@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "../../contexts/ChatContext";
 import { sendTyping } from "../../lib/socketClient";
-import { Send, AlertCircle, MoreHorizontal } from "lucide-react";
+import { Send } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Send "stopped typing" after this long without a keystroke
@@ -10,7 +10,7 @@ const TYPING_IDLE_MS = 2000;
 const MessageInput = () => {
   const [text, setText] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const { sendMessage, status, chatId, isPartnerTyping } = useChat();
+  const { sendMessage, status, chatId } = useChat();
   const typingTimerRef = useRef(null);
   const isTypingRef = useRef(false);
 
@@ -59,47 +59,41 @@ const MessageInput = () => {
     }
   };
 
+  const placeholder = canSend ? "Type a message" : status === "ended" ? "This chat has ended" : "Waiting for a match";
+
   return (
-    <div className="bg-base-100 p-4 border-t border-base-300">
-      {isPartnerTyping && (
-        <div className="flex items-center gap-2 text-sm text-base-content/60 mb-2" aria-live="polite">
-          <MoreHorizontal className="size-4 animate-pulse" aria-hidden="true" />
-          <span>Partner is typing...</span>
-        </div>
-      )}
-      <form onSubmit={handleSubmit} className="flex items-center gap-3">
-        <div className="flex-1 relative">
+    <div className="border-t-2 border-line bg-paper pb-[env(safe-area-inset-bottom)]">
+      <form onSubmit={handleSubmit} className="mx-auto max-w-[920px] px-3 pb-2 pt-3 chat:px-6 chat:pb-3">
+        <div className="flex items-center gap-2.5">
+          <label htmlFor="message-input" className="sr-only">
+            Message
+          </label>
           <input
+            id="message-input"
             type="text"
-            className="input input-bordered w-full pr-12"
-            placeholder={canSend ? "Type your message..." : "Waiting for a match..."}
-            aria-label="Message"
+            className="h-[52px] min-w-0 flex-1 rounded-full border-2 border-line bg-mist px-5 text-[17px] text-ink placeholder:text-muted-2 focus:border-ink disabled:cursor-not-allowed disabled:opacity-60"
+            placeholder={placeholder}
             value={text}
             onChange={handleChange}
             maxLength={1000}
             disabled={!canSend}
+            autoComplete="off"
+            enterKeyHint="send"
           />
-          {text.length > 800 && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-warning">
-              <AlertCircle size={14} aria-hidden="true" />
-              <span>{text.length}/1000</span>
-            </div>
-          )}
+          <button
+            type="submit"
+            className="inline-flex size-[52px] shrink-0 items-center justify-center rounded-full bg-ink transition-colors hover:bg-ink-hover disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!text.trim() || isSending || !canSend}
+            aria-label="Send"
+          >
+            <Send size={21} strokeWidth={2.5} className="text-pili" aria-hidden="true" />
+          </button>
         </div>
-        <button
-          type="submit"
-          className="btn btn-primary btn-circle"
-          disabled={!text.trim() || isSending || !canSend}
-          aria-label="Send message"
-        >
-          <Send size={20} />
-        </button>
+        <div className="mt-1.5 flex min-h-[18px] justify-between gap-3 px-2 text-xs text-muted-2">
+          <span className="hidden chat:inline">{canSend ? "Press Enter to send" : ""}</span>
+          {text.length > 800 && <span className="ml-auto">{text.length}/1000</span>}
+        </div>
       </form>
-      <p className="text-xs text-base-content/40 mt-2 text-center">
-        {canSend
-          ? "Be respectful. Sharing emails or phone numbers is blocked."
-          : "Please wait while we find you a match..."}
-      </p>
     </div>
   );
 };

@@ -33,7 +33,20 @@ const App = () => {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
-          <Toaster position="top-right" />
+          <Toaster
+            position="top-center"
+            containerStyle={{ top: 80 }}
+            toastOptions={{
+              style: {
+                background: "#12302F",
+                color: "#EEF6F4",
+                borderRadius: "18px",
+                padding: "10px 16px",
+                fontFamily: '"Atkinson Hyperlegible Next", system-ui, sans-serif',
+                fontSize: "15px",
+              },
+            }}
+          />
         </AdminProvider>
       </ChatProvider>
     </GuestProvider>

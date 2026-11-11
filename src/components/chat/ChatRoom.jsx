@@ -1,30 +1,91 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { format } from "date-fns";
+import { ArrowLeft, Flag, ShieldCheck } from "lucide-react";
 import { useChat } from "../../contexts/ChatContext";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import ChatControls from "./ChatControls";
-import { Loader2, Users, X, UserCheck } from "lucide-react";
+import Avatar from "../ui/Avatar";
+import Logo from "../ui/Logo";
+import TypingBubble from "../ui/TypingBubble";
+import useOnlineCount from "../../hooks/useOnlineCount";
+import { getChatDetails, getStoredTopic, nicknameFor, preferencesForTopic, topicLabel } from "../../lib/chatMeta";
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+const peopleOnline = (n) => `${n} ${n === 1 ? "person" : "people"} online`;
+
+/** Centered column used by the waiting, idle and loading screens. */
+const CenterColumn = ({ children }) => (
+  <div className="st-page flex flex-col">
+    <header className="mx-auto w-full max-w-[1240px] px-[18px] py-4 wide:px-8">
+      <Logo />
+    </header>
+    <main className="mx-auto flex w-full max-w-[640px] flex-1 flex-col items-center px-[18px] pb-12 pt-4 text-center wide:pt-10">
+      {children}
+    </main>
+  </div>
+);
+
+const Radar = () => (
+  <div className="st-radar mx-auto" aria-hidden="true">
+    <span className="st-radar-ring" />
+    <span className="st-radar-ring" />
+    <span className="st-radar-ring" />
+    <div className="st-radar-orbit">
+      <span className="left-[calc(50%-17px)] top-0"><Avatar tone="stranger" size={34} faded /></span>
+      <span className="bottom-[8%] left-[2%]"><Avatar tone="plain" size={30} faded /></span>
+      <span className="bottom-[14%] right-0"><Avatar tone="stranger" size={28} faded /></span>
+    </div>
+    <div className="absolute inset-0 flex items-center justify-center">
+      <Avatar tone="me" size={92} className="drop-shadow-[0_18px_22px_rgba(18,48,47,0.28)]" />
+    </div>
+  </div>
+);
 
 const ChatRoom = () => {
-  const { status, messages, isLoading, startChat, cancelSearch } = useChat();
+  const { status, messages, isLoading, isPartnerTyping, chatId, startChat, cancelSearch, endChat, returnToLobby } =
+    useChat();
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
   const noMatchTimeoutRef = useRef(null);
   const [showNoMatchMessage, setShowNoMatchMessage] = useState(false);
+  const [reported, setReported] = useState(false);
+  const onlineCount = useOnlineCount();
+  const topic = getStoredTopic();
+
+  // The context clears the chat when it ends; keep the last one on screen so we
+  // can show "{nickname} left the chat" instead of jumping straight home.
+  const leavingRef = useRef(false);
+  const lastChatRef = useRef({ chatId: null, messages: [] });
+  if (status === "matched" && chatId) lastChatRef.current = { chatId, messages };
+
+  const shownChatId = status === "matched" ? chatId : lastChatRef.current.chatId;
+  const shownMessages = status === "matched" ? messages : lastChatRef.current.messages;
+  const partnerLeft = status === "ended" && Boolean(lastChatRef.current.chatId) && !leavingRef.current;
+  const nickname = nicknameFor(shownChatId);
+  const details = getChatDetails(shownChatId);
+
+  // A new chat clears the "Reported" banner; the chat ending keeps it
+  useEffect(() => {
+    if (chatId) setReported(false);
+  }, [chatId]);
 
   useEffect(() => {
-    if (messagesEndRef.current && messages.length > 0) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (messagesEndRef.current && (shownMessages.length > 0 || isPartnerTyping || partnerLeft)) {
+      messagesEndRef.current.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "end" });
     }
-  }, [messages]);
+  }, [shownMessages, isPartnerTyping, partnerLeft, reported]);
 
-  // Redirect to home if not matched
+  // Leaving (or a chat that ended before this page saw it) goes home;
+  // the partner leaving keeps the chat on screen.
   useEffect(() => {
-    if (status === "ended") {
+    if (status === "ended" && !partnerLeft) {
       navigate("/", { replace: true });
     }
-  }, [status, navigate]);
+  }, [status, partnerLeft, navigate]);
 
   // Handle no match timeout
   useEffect(() => {
@@ -49,121 +110,188 @@ const ChatRoom = () => {
     };
   }, [status]);
 
+  const handleLeave = () => {
+    if (status !== "matched") {
+      returnToLobby();
+      navigate("/");
+      return;
+    }
+    leavingRef.current = true;
+    endChat();
+  };
+
+  const findSomeoneNew = () => {
+    leavingRef.current = false;
+    lastChatRef.current = { chatId: null, messages: [] };
+    startChat(preferencesForTopic(topic)).catch(() => {});
+  };
+
+  const backHome = () => {
+    returnToLobby();
+    navigate("/");
+  };
+
   if (status === "waiting") {
     return (
-      <div className="h-screen bg-base-200 flex items-center justify-center">
-        <div className="bg-base-100 rounded-lg shadow-xl p-8 max-w-md w-full text-center relative">
-          <button
-            onClick={() => {
-              cancelSearch();
-              if (noMatchTimeoutRef.current) clearTimeout(noMatchTimeoutRef.current);
-            }}
-            className="absolute top-4 right-4 btn btn-ghost btn-sm btn-circle"
-            aria-label="Stop searching"
-            title="Cancel search"
-          >
-            <X size={20} />
-          </button>
-          
-          <div className="mb-6">
-            <div className="relative w-24 h-24 mx-auto">
-              <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
-              <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-              <Users className="absolute inset-0 m-auto size-10 text-primary" />
-            </div>
-          </div>
-          
-          <h2 className="text-2xl font-bold mb-2">Finding a Match</h2>
-          <p className="text-base-content/70 mb-4">
-            {showNoMatchMessage 
-              ? "No users are available right now. Keep searching or try again later."
-              : "We're looking for someone to chat with you..."
-            }
-          </p>
-          
-          <div className="flex items-center justify-center gap-2 text-sm text-base-content/50">
-            <Loader2 className="size-4 animate-spin" />
-            <span>{showNoMatchMessage ? "Still searching..." : "This may take a few moments"}</span>
+      <CenterColumn>
+        <Radar />
+        <div role="status" className="mt-8 flex flex-col items-center">
+          <h1 className="st-section-title max-w-[18ch]">Looking for someone to talk to</h1>
+          {showNoMatchMessage && (
+            <p className="mt-3 max-w-[40ch] text-muted">
+              Nobody&apos;s free yet. Keep this open, or try again later.
+            </p>
+          )}
+        </div>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <span className="st-pill st-pill-ink">{topicLabel(topic)}</span>
+          {onlineCount !== null && (
+            <span className="st-pill">
+              <span className="st-live-dot" aria-hidden="true" />
+              {peopleOnline(onlineCount)}
+            </span>
+          )}
+        </div>
+
+        <div className="st-card mt-10 flex w-full items-start gap-4 p-5 text-left">
+          <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-mist-2" aria-hidden="true">
+            <ShieldCheck size={22} strokeWidth={2.25} />
+          </span>
+          <div>
+            <p className="st-display text-lg font-bold">Stay anonymous</p>
+            <p className="text-muted">Keep your name, section and socials out of the chat.</p>
           </div>
         </div>
-      </div>
+
+        <button
+          type="button"
+          onClick={async () => {
+            if (noMatchTimeoutRef.current) clearTimeout(noMatchTimeoutRef.current);
+            await cancelSearch();
+            navigate("/");
+          }}
+          className="st-btn st-btn-outline mt-6"
+          disabled={isLoading}
+        >
+          Stop looking
+        </button>
+      </CenterColumn>
     );
   }
 
   if (status === "idle") {
     return (
-      <div className="h-screen bg-base-200 flex items-center justify-center">
-        <div className="bg-base-100 rounded-lg shadow-xl p-8 max-w-md w-full text-center">
-          <Users className="size-16 mx-auto mb-4 text-primary" />
-          <h2 className="text-2xl font-bold mb-2">Ready to Chat</h2>
-          <p className="text-base-content/70 mb-6">
-            Click the button below to find someone to chat with.
-          </p>
+      <CenterColumn>
+        <Avatar tone="me" size={92} />
+        <h1 className="st-section-title mt-8">Ready when you are</h1>
+        <p className="mt-3 text-muted">
+          You&apos;ll be matched on <strong className="text-ink">{topicLabel(topic)}</strong>.
+        </p>
+        <div className="mt-8 flex flex-col items-center gap-2">
           <button
-            onClick={() => startChat().catch(() => {})}
-            className="btn btn-primary btn-lg px-8 gap-2"
+            type="button"
+            onClick={() => startChat(preferencesForTopic(topic)).catch(() => {})}
+            className="st-btn st-btn-primary min-h-[58px] px-8 text-lg"
           >
-            <Users size={20} />
-            Find a Match
+            Start a chat
           </button>
-          <button
-            onClick={() => navigate("/")}
-            className="btn btn-ghost mt-4"
-          >
-            Back to Home
+          <button type="button" onClick={() => navigate("/")} className="st-btn st-btn-text">
+            Back to home
           </button>
         </div>
-      </div>
+      </CenterColumn>
     );
   }
 
-  if (isLoading && messages.length === 0) {
+  if ((isLoading && messages.length === 0 && !partnerLeft) || (status !== "matched" && !partnerLeft)) {
     return (
-      <div className="h-screen bg-base-200 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="size-12 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-lg">Loading chat...</p>
+      <CenterColumn>
+        <div className="mt-16 flex flex-col items-center gap-4" role="status">
+          <TypingBubble />
+          <p className="st-display text-xl font-semibold">Loading chat</p>
         </div>
-      </div>
+      </CenterColumn>
     );
   }
 
-  if (status !== "matched") {
-    return (
-      <div className="h-screen bg-base-200 flex items-center justify-center">
-        <div className="bg-base-100 rounded-lg shadow-xl p-8 max-w-md w-full text-center">
-          <Loader2 className="size-12 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-lg">Finding a match...</p>
-        </div>
-      </div>
-    );
-  }
+  const statusLine = partnerLeft ? "Left the chat" : isPartnerTyping ? "typing…" : "Online";
 
   return (
-      <div className="h-screen bg-base-200 flex flex-col">
-        <div className="bg-base-100 shadow-sm px-6 py-4 flex items-center justify-between border-b border-base-300">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <UserCheck size={20} className="text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">Anonymous Chat</h1>
-              <p className="text-sm text-base-content/60 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                Connected with a stranger
-              </p>
-            </div>
+    <div className="st-page flex h-dvh min-h-0 flex-col">
+      <header className="border-b-2 border-line bg-paper">
+        <div className="mx-auto flex min-h-[68px] max-w-[920px] items-center gap-2 px-3 py-2.5 chat:gap-3 chat:px-6">
+          <button type="button" onClick={handleLeave} className="st-icon-btn -ml-1" aria-label="Leave chat">
+            <ArrowLeft size={22} strokeWidth={2.5} aria-hidden="true" />
+          </button>
+          <Avatar tone="stranger" online={!partnerLeft} faded={partnerLeft} />
+          <div className="min-w-0 flex-1 leading-tight">
+            <h1 className="st-display truncate text-lg font-bold">{nickname}</h1>
+            <p role="status" className={`truncate text-sm ${partnerLeft ? "text-muted-2" : "text-online-text"}`}>
+              {statusLine}
+            </p>
           </div>
-          <ChatControls />
+          <ChatControls
+            nickname={nickname}
+            preferences={preferencesForTopic(topic)}
+            onReported={() => setReported(true)}
+          />
         </div>
+      </header>
 
-        <div className="flex-1 overflow-y-auto p-4 bg-base-200">
-          <MessageList messages={messages} />
+      {reported && (
+        <div role="status" className="border-b-2 border-line bg-coral-soft">
+          <p className="mx-auto flex max-w-[920px] items-start gap-2.5 px-3 py-3 text-[15px] font-medium chat:px-6">
+            <Flag size={17} strokeWidth={2.5} className="mt-0.5 shrink-0" aria-hidden="true" />
+            Reported. Admins will review this chat. You can keep talking or hit Next.
+          </p>
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" aria-live="polite">
+        <div className="mx-auto flex max-w-[920px] flex-col px-3 py-5 chat:px-6">
+          <div className="mb-6 flex flex-col items-center gap-3">
+            <span className="st-pill text-[14px]">
+              Matched on {topicLabel(details?.topic)}
+              {details?.matchedAt ? `, ${format(new Date(details.matchedAt), "h:mm a")}` : ""}
+            </span>
+            <p className="flex max-w-[520px] items-start gap-2.5 rounded-[20px] bg-ink px-4 py-3 text-left text-[15px] text-onink">
+              <ShieldCheck size={19} strokeWidth={2.25} className="mt-0.5 shrink-0 text-pili" aria-hidden="true" />
+              You&apos;re both anonymous. Don&apos;t share your name, section or socials.
+            </p>
+          </div>
+
+          {shownMessages.length === 0 && !isPartnerTyping && !partnerLeft && (
+            <p className="mb-4 text-center text-muted-2">No messages yet. Say hi.</p>
+          )}
+
+          <MessageList
+            messages={shownMessages}
+            nickname={nickname}
+            isPartnerTyping={isPartnerTyping}
+            partnerLeft={partnerLeft}
+          />
+
+          {partnerLeft && (
+            <div className="st-card mx-auto mt-8 w-full max-w-[440px] p-6 text-center">
+              <Avatar tone="stranger" size={48} faded className="mx-auto" />
+              <p className="st-display mt-3 text-[22px] font-bold leading-tight">{nickname} left the chat.</p>
+              <p className="mt-1 text-muted">Find someone new, or head back home.</p>
+              <div className="mt-5 flex flex-col items-center gap-1">
+                <button type="button" onClick={findSomeoneNew} className="st-btn st-btn-primary w-full chat:w-auto">
+                  Find someone new
+                </button>
+                <button type="button" onClick={backHome} className="st-btn st-btn-text">
+                  Back to home
+                </button>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
-
-        <MessageInput />
       </div>
+
+      <MessageInput />
+    </div>
   );
 };
 

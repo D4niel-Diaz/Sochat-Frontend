@@ -1,3 +1,336 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── SORSU Talk tokens ─────────────────────────────────────────────────────
+   Guest-facing screens are wrapped in .st-page; admin screens keep daisyUI. */
+:root {
+  --st-ground: #d7e8e4;
+  --st-dot: #bfd7d2;
+  --st-ink: #12302f;
+  --st-ink-hover: #1e4645;
+  --st-on-ink: #eef6f4;
+  --st-muted: #34514e;
+  --st-muted-2: #44625f;
+  --st-line: #b9d2cd;
+  --st-paper: #ffffff;
+  --st-mist: #f3f8f6;
+  --st-mist-2: #eaf3f1;
+  --st-pili: #f5c443;
+  --st-pili-hover: #ffd45e;
+  --st-coral: #f29e7d;
+  --st-coral-soft: #fbe3da;
+  --st-online: #2e9e6b;
+  --st-online-text: #2e7a57;
+  --st-shadow: 0 30px 60px -36px rgba(18, 48, 47, 0.45);
+  --st-display: "Familjen Grotesk", system-ui, sans-serif;
+  --st-body: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+}
+
+@layer components {
+  .st-page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background-color: var(--st-ground);
+    background-image: radial-gradient(var(--st-dot) 1.3px, transparent 1.3px);
+    background-size: 24px 24px;
+    color: var(--st-ink);
+    font-family: var(--st-body);
+    font-size: 17px;
+    line-height: 1.55;
+    overflow-x: clip;
+  }
+  .st-page :focus-visible {
+    outline: 3px solid var(--st-ink);
+    outline-offset: 3px;
+  }
+  .st-on-ink :focus-visible {
+    outline-color: var(--st-pili);
+  }
+
+  .st-display {
+    font-family: var(--st-display);
+    letter-spacing: -0.025em;
+  }
+  .st-hero-title {
+    font-family: var(--st-display);
+    font-weight: 700;
+    font-size: clamp(44px, 6.2vw, 84px);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+  .st-section-title {
+    font-family: var(--st-display);
+    font-weight: 700;
+    font-size: clamp(30px, 3.6vw, 44px);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+  }
+
+  /* Buttons */
+  .st-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 52px;
+    padding: 0 26px;
+    border-radius: 999px;
+    font-family: var(--st-display);
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+  }
+  .st-btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .st-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .st-btn-primary {
+    background: var(--st-pili);
+    color: var(--st-ink);
+  }
+  .st-btn-primary:hover:not(:disabled) {
+    background: var(--st-pili-hover);
+  }
+  .st-btn-dark {
+    background: var(--st-ink);
+    color: #fff;
+  }
+  .st-btn-dark:hover:not(:disabled) {
+    background: var(--st-ink-hover);
+  }
+  .st-btn-outline {
+    background: var(--st-paper);
+    color: var(--st-ink);
+    border: 2px solid var(--st-ink);
+  }
+  .st-btn-outline:hover:not(:disabled) {
+    background: var(--st-mist-2);
+  }
+  .st-btn-text {
+    min-height: 44px;
+    padding: 0 14px;
+    background: transparent;
+    color: var(--st-ink);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 2px;
+  }
+  .st-btn-text:hover {
+    background: var(--st-mist-2);
+  }
+  .st-btn-sm {
+    min-height: 44px;
+    padding: 0 18px;
+    font-size: 16px;
+  }
+  .st-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    color: var(--st-ink);
+    transition: background-color 0.15s ease;
+  }
+  .st-icon-btn:hover {
+    background: var(--st-mist-2);
+  }
+
+  .st-link {
+    color: var(--st-ink);
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 2px;
+  }
+
+  /* Pills and chips */
+  .st-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    background: var(--st-paper);
+    color: var(--st-ink);
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  .st-pill-ink {
+    background: var(--st-ink);
+    color: var(--st-on-ink);
+  }
+  .st-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 999px;
+    border: 2px solid var(--st-ink);
+    background: var(--st-paper);
+    color: var(--st-ink);
+    font-family: var(--st-display);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .st-chip:hover {
+    background: var(--st-mist-2);
+  }
+  .st-chip[aria-pressed="true"],
+  .st-chip.is-on {
+    background: var(--st-ink);
+    color: var(--st-on-ink);
+  }
+
+  .st-card {
+    background: var(--st-paper);
+    border-radius: 28px;
+    box-shadow: var(--st-shadow);
+  }
+
+  /* Chat bubbles: one small corner where the tail would be */
+  .st-bubble {
+    padding: 10px 16px;
+    font-size: 17px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+  .st-bubble-in {
+    background: var(--st-paper);
+    color: var(--st-ink);
+    border-radius: 20px 20px 20px 6px;
+  }
+  .st-bubble-out {
+    background: var(--st-ink);
+    color: var(--st-on-ink);
+    border-radius: 20px 20px 6px 20px;
+  }
+  .st-bubble-in.is-first { border-radius: 20px 20px 20px 6px; }
+  .st-bubble-in.is-middle { border-radius: 6px 20px 20px 6px; }
+  .st-bubble-in.is-last { border-radius: 6px 20px 20px 20px; }
+  .st-bubble-out.is-first { border-radius: 20px 20px 6px 20px; }
+  .st-bubble-out.is-middle { border-radius: 20px 6px 6px 20px; }
+  .st-bubble-out.is-last { border-radius: 20px 6px 20px 20px; }
+
+  /* Typing indicator */
+  .st-typing {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 14px 18px;
+    background: var(--st-paper);
+    border-radius: 20px 20px 20px 6px;
+  }
+  .st-typing span {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--st-muted-2);
+    animation: st-blink 1.2s infinite ease-in-out both;
+  }
+  .st-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .st-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+  .st-live-dot {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--st-online);
+    flex-shrink: 0;
+  }
+  .st-live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--st-online);
+    animation: st-pulse 1.8s infinite ease-out;
+  }
+
+  /* Matching radar */
+  .st-radar {
+    position: relative;
+    width: 240px;
+    height: 240px;
+  }
+  @media (min-width: 760px) {
+    .st-radar {
+      width: 300px;
+      height: 300px;
+    }
+  }
+  .st-radar-ring {
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--st-ink);
+    border-radius: 999px;
+    opacity: 0;
+    animation: st-ring 3.6s infinite cubic-bezier(0.2, 0.6, 0.35, 1);
+  }
+  .st-radar-ring:nth-child(2) { animation-delay: 1.2s; }
+  .st-radar-ring:nth-child(3) { animation-delay: 2.4s; }
+  .st-radar-orbit {
+    position: absolute;
+    inset: 6%;
+    animation: st-spin 22s linear infinite;
+  }
+  .st-radar-orbit > * {
+    position: absolute;
+    animation: st-spin 22s linear infinite reverse;
+  }
+}
+
+@keyframes st-blink {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+@keyframes st-pulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes st-ring {
+  0% { transform: scale(0.3); opacity: 0.55; }
+  100% { transform: scale(1); opacity: 0; }
+}
+@keyframes st-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes st-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.st-rise {
+  animation: st-rise 0.22s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-page *,
+  .st-page *::before,
+  .st-page *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  /* Keep the static rings visible when they don't animate */
+  .st-radar-ring { opacity: 0.25; }
+  .st-radar-ring:nth-child(1) { transform: scale(0.45); }
+  .st-radar-ring:nth-child(2) { transform: scale(0.72); }
+  .st-radar-ring:nth-child(3) { transform: scale(1); }
+}
