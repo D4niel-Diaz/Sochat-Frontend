@@ -26,7 +26,7 @@ const AdminLoginPage = () => {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <MessageSquare className="size-10 text-primary" />
-            <h1 className="text-2xl font-bold">SORSU TALK</h1>
+            <h1 className="text-2xl font-bold">SoTalk</h1>
           </div>
           <h2 className="text-xl font-semibold">Admin Login</h2>
           <p className="text-base-content/60 mt-2">

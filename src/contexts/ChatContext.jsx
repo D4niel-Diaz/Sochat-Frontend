@@ -80,7 +80,7 @@ export const ChatProvider = ({ children }) => {
   const handlePartnerEnded = useCallback(() => {
     if (statusRef.current !== "matched") return;
     resetChat("ended");
-    toast("Your chat partner has ended the conversation.", { icon: "ℹ️" });
+    toast("The other person left the chat.");
   }, [resetChat]);
 
   /** Handle a /chat/start response (REST fallback path). */
@@ -157,7 +157,7 @@ export const ChatProvider = ({ children }) => {
     }
   }, [sessionToken, endCurrentChat, resetChat]);
 
-  const findNewMatch = useCallback(async () => {
+  const findNewMatch = useCallback(async (preferences) => {
     if (!sessionToken) return;
     if (statusRef.current === "matched") {
       try {
@@ -170,7 +170,7 @@ export const ChatProvider = ({ children }) => {
       }
       resetChat("idle");
     }
-    await startChat();
+    await startChat(preferences);
   }, [sessionToken, endCurrentChat, resetChat, startChat]);
 
   const cancelSearch = useCallback(async () => {
@@ -179,7 +179,7 @@ export const ChatProvider = ({ children }) => {
     try {
       leavePresencePool();
       await presenceService.optOut(sessionToken);
-      toast("Search cancelled", { icon: "ℹ️" });
+      toast("Search cancelled");
     } catch (err) {
       toast.error(err.message);
     } finally {

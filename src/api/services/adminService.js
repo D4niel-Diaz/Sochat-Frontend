@@ -20,4 +20,6 @@ export const adminService = {
   resolveReport: (reportId) => axiosInstance.post("/admin/report/resolve", { report_id: reportId }, auth()),
   getBannedGuests: () => axiosInstance.get("/admin/banned-guests", auth()),
   getFlaggedMessages: () => axiosInstance.get("/admin/flagged-messages", auth()),
+  reviewFlaggedMessage: (messageId) =>
+    axiosInstance.post("/admin/flagged-messages/review", { message_id: messageId }, auth()),
 };

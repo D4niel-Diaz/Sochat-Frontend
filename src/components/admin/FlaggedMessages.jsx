@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { adminService } from "../../api/services/adminService";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle } from "lucide-react";
+import toast from "react-hot-toast";
+import { error as logError } from "../../utils/logger";
 
 const FlaggedMessages = () => {
   const [flaggedMessages, setFlaggedMessages] = useState([]);
@@ -16,10 +18,21 @@ const FlaggedMessages = () => {
 
       const responseData = response.data.data || response.data;
       setFlaggedMessages(responseData || []);
-    } catch (error) {
-      error("Failed to fetch flagged messages:", error);
+    } catch (err) {
+      logError("Failed to fetch flagged messages:", err);
+      toast.error("Failed to load flagged messages");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleReview = async (messageId) => {
+    try {
+      await adminService.reviewFlaggedMessage(messageId);
+      toast.success("Marked as reviewed");
+      setFlaggedMessages((prev) => prev.filter((m) => m.message_id !== messageId));
+    } catch (err) {
+      toast.error(err.message);
     }
   };
 
@@ -38,7 +51,11 @@ const FlaggedMessages = () => {
           <h1 className="text-2xl font-bold">Flagged Messages</h1>
           <p className="text-base-content/60">
             {flaggedMessages.length} flagged message
-            {flaggedMessages.length !== 1 ? "s" : ""}
+            {flaggedMessages.length !== 1 ? "s" : ""} to review
+          </p>
+          <p className="mt-1 text-sm text-base-content/50">
+            Flagged messages are kept until you mark them reviewed (30 days at most). After that they are
+            deleted with the rest of the chat.
           </p>
         </div>
       </div>
@@ -65,6 +82,14 @@ const FlaggedMessages = () => {
                       Message #{message.message_id}
                     </span>
                     <span className="badge badge-warning">Flagged</span>
+                    <button
+                      type="button"
+                      onClick={() => handleReview(message.message_id)}
+                      className="btn btn-sm btn-ghost ml-auto gap-1"
+                    >
+                      <CheckCircle size={16} aria-hidden="true" />
+                      Mark reviewed
+                    </button>
                   </div>
 
                   <div className="space-y-2 text-sm">

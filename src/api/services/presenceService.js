@@ -17,4 +17,6 @@ export const presenceService = {
   heartbeat: (sessionToken) => axiosInstance.post("/presence/heartbeat", null, auth(sessionToken)),
 
   disconnect: (sessionToken) => axiosInstance.post("/presence/disconnect", null, auth(sessionToken)),
+
+  status: (sessionToken) => axiosInstance.get("/presence/status", auth(sessionToken)),
 };
