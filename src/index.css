@@ -27,6 +27,12 @@
   --st-body: "Atkinson Hyperlegible Next", system-ui, sans-serif;
 }
 
+/* Guest pages are light-only: opt out of browser "auto dark" / force-dark
+   modes, which can turn text the same color as its background. */
+:root:has(.st-page) {
+  color-scheme: only light;
+}
+
 /* Touch baseline */
 html {
   -webkit-tap-highlight-color: transparent; /* no grey flash on tap; controls have :active */
@@ -62,7 +68,7 @@ html {
     line-height: 1.55;
     overflow-x: clip;
     /* Light-only design: stop phone dark modes from restyling inputs */
-    color-scheme: light;
+    color-scheme: only light;
     /* Keep content clear of the notch in landscape */
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
@@ -244,6 +250,24 @@ html {
     .st-safe-x {
       --st-pad: 24px;
     }
+  }
+
+  /* Message box. Text color is pinned with -webkit-text-fill-color too, so
+     browser dark modes and iOS can't repaint it to match the background. */
+  .st-composer-input {
+    color: var(--st-ink);
+    -webkit-text-fill-color: var(--st-ink);
+    caret-color: var(--st-ink);
+    opacity: 1;
+  }
+  .st-composer-input::placeholder {
+    color: var(--st-muted-2);
+    -webkit-text-fill-color: var(--st-muted-2);
+    opacity: 1;
+  }
+  .st-composer-input:disabled {
+    color: var(--st-muted-2);
+    -webkit-text-fill-color: var(--st-muted-2);
   }
 
   .st-card {

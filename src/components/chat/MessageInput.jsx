@@ -71,7 +71,7 @@ const MessageInput = () => {
           <input
             id="message-input"
             type="text"
-            className="h-[52px] min-w-0 flex-1 rounded-full border-2 border-ink bg-ink px-5 text-[17px] text-white caret-pili placeholder:text-onink/70 focus:border-pili disabled:cursor-not-allowed disabled:opacity-60"
+            className="st-composer-input h-[52px] min-w-0 flex-1 rounded-full border-2 border-ink bg-white px-5 text-[17px] disabled:cursor-not-allowed disabled:border-line disabled:bg-mist"
             placeholder={placeholder}
             value={text}
             onChange={handleChange}
