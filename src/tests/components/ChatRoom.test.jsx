@@ -51,7 +51,7 @@ describe("ChatRoom", () => {
   });
 
   it("starts matching with the stored topic, not the click event", async () => {
-    sessionStorage.setItem("sorsuTalk:topic", JSON.stringify("Music"));
+    sessionStorage.setItem("soTalk:topic", JSON.stringify("Music"));
     const state = chatState({ status: "idle" });
     useChat.mockReturnValue(state);
     renderRoom();

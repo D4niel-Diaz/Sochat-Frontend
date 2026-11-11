@@ -15,7 +15,7 @@ export const LogoMark = ({ size = 34 }) => (
 const Logo = ({ to = "/" }) => (
   <Link to={to} className="inline-flex min-h-[44px] items-center gap-2.5 rounded-full text-ink">
     <LogoMark />
-    <span className="st-display text-[22px] font-bold">SORSU Talk</span>
+    <span className="st-display text-[22px] font-bold">SoTalk</span>
   </Link>
 );
 

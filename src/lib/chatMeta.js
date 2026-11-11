@@ -40,8 +40,8 @@ export const nicknameFor = (seed) => {
   return `${ADJECTIVES[n % ADJECTIVES.length]} ${NOUNS[(n >>> 8) % NOUNS.length]}`;
 };
 
-const TOPIC_KEY = "sorsuTalk:topic";
-const chatKey = (chatId) => `sorsuTalk:chat:${chatId}`;
+const TOPIC_KEY = "soTalk:topic";
+const chatKey = (chatId) => `soTalk:chat:${chatId}`;
 
 const read = (key) => {
   try {

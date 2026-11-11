@@ -1,4 +1,4 @@
-# SORSU TALK Frontend
+# SoTalk Frontend
 
 React 18 + Vite single-page app for anonymous one-to-one chat, plus the admin panel.
 

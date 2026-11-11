@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── SORSU Talk tokens ─────────────────────────────────────────────────────
+/* ── SoTalk tokens ─────────────────────────────────────────────────────
    Guest-facing screens are wrapped in .st-page; admin screens keep daisyUI. */
 :root {
   --st-ground: #d7e8e4;
@@ -27,7 +27,29 @@
   --st-body: "Atkinson Hyperlegible Next", system-ui, sans-serif;
 }
 
+/* Touch baseline */
+html {
+  -webkit-tap-highlight-color: transparent; /* no grey flash on tap; controls have :active */
+  -webkit-text-size-adjust: 100%; /* no font inflation in landscape */
+}
+
 @layer components {
+  /* Controls fire on tap without the double-tap-zoom wait, and long-press
+     doesn't select their labels. Content text stays selectable. */
+  .st-page button,
+  .st-page a,
+  .st-page label,
+  .st-page [role="button"] {
+    touch-action: manipulation;
+  }
+  .st-page button,
+  .st-chip,
+  .st-btn {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
   .st-page {
     min-height: 100vh;
     min-height: 100dvh;
@@ -39,6 +61,9 @@
     font-size: 17px;
     line-height: 1.55;
     overflow-x: clip;
+    /* Keep content clear of the notch in landscape */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
   }
   .st-page :focus-visible {
     outline: 3px solid var(--st-ink);
@@ -96,23 +121,14 @@
     background: var(--st-pili);
     color: var(--st-ink);
   }
-  .st-btn-primary:hover:not(:disabled) {
-    background: var(--st-pili-hover);
-  }
   .st-btn-dark {
     background: var(--st-ink);
     color: #fff;
-  }
-  .st-btn-dark:hover:not(:disabled) {
-    background: var(--st-ink-hover);
   }
   .st-btn-outline {
     background: var(--st-paper);
     color: var(--st-ink);
     border: 2px solid var(--st-ink);
-  }
-  .st-btn-outline:hover:not(:disabled) {
-    background: var(--st-mist-2);
   }
   .st-btn-text {
     min-height: 44px;
@@ -122,9 +138,6 @@
     text-decoration: underline;
     text-underline-offset: 4px;
     text-decoration-thickness: 2px;
-  }
-  .st-btn-text:hover {
-    background: var(--st-mist-2);
   }
   .st-btn-sm {
     min-height: 44px;
@@ -141,9 +154,6 @@
     border-radius: 999px;
     color: var(--st-ink);
     transition: background-color 0.15s ease;
-  }
-  .st-icon-btn:hover {
-    background: var(--st-mist-2);
   }
 
   .st-link {
@@ -187,13 +197,51 @@
     letter-spacing: -0.01em;
     transition: background-color 0.15s ease, color 0.15s ease;
   }
-  .st-chip:hover {
-    background: var(--st-mist-2);
-  }
   .st-chip[aria-pressed="true"],
   .st-chip.is-on {
     background: var(--st-ink);
     color: var(--st-on-ink);
+  }
+
+  /* Hover only where a real pointer can hover; touch gets :active instead
+     (otherwise the hover state sticks after a tap) */
+  @media (hover: hover) and (pointer: fine) {
+    .st-btn-primary:hover:not(:disabled) {
+      background: var(--st-pili-hover);
+    }
+    .st-btn-dark:hover:not(:disabled) {
+      background: var(--st-ink-hover);
+    }
+    .st-btn-outline:hover:not(:disabled) {
+      background: var(--st-mist-2);
+    }
+    .st-btn-text:hover {
+      background: var(--st-mist-2);
+    }
+    .st-icon-btn:hover {
+      background: var(--st-mist-2);
+    }
+    .st-chip:not([aria-pressed="true"]):not(.is-on):hover {
+      background: var(--st-mist-2);
+    }
+  }
+  .st-btn-primary:active:not(:disabled) { background: var(--st-pili-hover); }
+  .st-btn-dark:active:not(:disabled) { background: var(--st-ink-hover); }
+  .st-btn-outline:active:not(:disabled),
+  .st-btn-text:active,
+  .st-icon-btn:active,
+  .st-chip:active:not([aria-pressed="true"]) { background: var(--st-mist-2); }
+
+  /* Side padding that also clears the notch in landscape (chat bars are full-bleed) */
+  .st-safe-x {
+    --st-pad: 12px;
+    padding-left: max(var(--st-pad), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--st-pad), env(safe-area-inset-right, 0px));
+  }
+  @media (min-width: 600px) {
+    .st-safe-x {
+      --st-pad: 24px;
+    }
   }
 
   .st-card {
@@ -274,6 +322,13 @@
     .st-radar {
       width: 300px;
       height: 300px;
+    }
+  }
+  /* Short phones (SE, landscape): keep "Stop looking" above the fold */
+  @media (max-height: 700px) {
+    .st-radar {
+      width: 190px;
+      height: 190px;
     }
   }
   .st-radar-ring {

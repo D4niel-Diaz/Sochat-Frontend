@@ -131,7 +131,7 @@ const GuestLandingPage = () => {
 
             <div className="mb-3 flex items-center gap-2.5 text-[15px] font-medium text-muted">
               <Avatar tone="stranger" size={30} />
-              A stranger from SorSU
+              A stranger on SoTalk
             </div>
             <h1 className="st-hero-title max-w-[13ch] rounded-[30px_30px_30px_8px] bg-paper px-[26px] py-7 shadow-ink wide:rounded-[40px_40px_40px_8px] wide:px-12 wide:py-10">
               Someone on campus wants to talk too.
@@ -239,9 +239,9 @@ const GuestLandingPage = () => {
               <div className="py-5">
                 <dt className="st-display text-xl font-bold">Your chats</dt>
                 <dd className="mt-1 text-muted">
-                  {/* TODO: replace with the real data-retention policy. The code currently never deletes messages. */}
-                  Messages are stored on our server.{" "}
-                  <mark className="rounded bg-pili px-1 text-ink">TODO: how long chats are kept.</mark>
+                  {/* Enforced by the backend's chats:prune-messages job (config/moderation.php) */}
+                  Messages are deleted 1 hour after a chat ends. If a chat is reported, we keep it until admins have
+                  reviewed it.
                 </dd>
               </div>
               <div className="pt-5">
@@ -266,8 +266,7 @@ const GuestLandingPage = () => {
       </main>
 
       <footer className="mx-auto flex max-w-[1240px] flex-col gap-3 px-[18px] pb-10 text-[15px] text-muted wide:flex-row wide:items-center wide:justify-between wide:px-8">
-        {/* TODO: say who runs SORSU Talk (org, office or student group). */}
-        <p>SORSU Talk is run by <mark className="rounded bg-pili px-1 text-ink">TODO: who runs it</mark>.</p>
+        <p>SoTalk is run anonymously.</p>
         <nav aria-label="Footer" className="-ml-3 flex flex-wrap items-center wide:ml-0">
           {/* TODO: point Terms and Privacy at real pages once they exist */}
           <a href="#rules" className="inline-flex min-h-[44px] items-center rounded-full px-3 hover:bg-mist-2">Terms</a>

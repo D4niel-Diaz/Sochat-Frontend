@@ -109,7 +109,7 @@ const ChatControls = ({ nickname = "this person", preferences, onReported }) => 
         <button
           type="button"
           onClick={handleFindNewMatch}
-          className="st-btn st-btn-primary st-btn-sm px-4 chat:px-5"
+          className="st-btn st-btn-primary st-btn-sm px-3.5 xs:px-4 chat:px-5"
           disabled={isFindingMatch || isLoading}
         >
           {isFindingMatch && <Loader2 size={17} className="animate-spin" aria-hidden="true" />}
@@ -120,12 +120,12 @@ const ChatControls = ({ nickname = "this person", preferences, onReported }) => 
 
       {showReportModal && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/55 p-3 chat:items-center chat:p-6"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/55 p-2 xs:p-3 chat:items-center chat:p-6"
           onMouseDown={(e) => e.target === e.currentTarget && !isSubmitting && closeReportModal()}
         >
           <div
             ref={dialogRef}
-            className="st-rise max-h-[calc(100dvh-24px)] w-full max-w-[460px] overflow-y-auto rounded-[28px] bg-paper p-6 shadow-ink chat:p-8"
+            className="st-rise max-h-[calc(100dvh-24px)] w-full max-w-[460px] overflow-y-auto overscroll-contain rounded-[28px] bg-paper p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-ink chat:p-8"
             role="dialog"
             aria-modal="true"
             aria-labelledby="report-title"

@@ -10,6 +10,7 @@ import Avatar from "../ui/Avatar";
 import Logo from "../ui/Logo";
 import TypingBubble from "../ui/TypingBubble";
 import useOnlineCount from "../../hooks/useOnlineCount";
+import useVisualViewportHeight from "../../hooks/useVisualViewportHeight";
 import { getChatDetails, getStoredTopic, nicknameFor, preferencesForTopic, topicLabel } from "../../lib/chatMeta";
 
 const prefersReducedMotion = () =>
@@ -23,7 +24,7 @@ const CenterColumn = ({ children }) => (
     <header className="mx-auto w-full max-w-[1240px] px-[18px] py-4 wide:px-8">
       <Logo />
     </header>
-    <main className="mx-auto flex w-full max-w-[640px] flex-1 flex-col items-center px-[18px] pb-12 pt-4 text-center wide:pt-10">
+    <main className="mx-auto flex w-full max-w-[640px] flex-1 flex-col items-center px-[18px] pb-[max(3rem,env(safe-area-inset-bottom))] pt-2 text-center wide:pt-10">
       {children}
     </main>
   </div>
@@ -67,6 +68,10 @@ const ChatRoom = () => {
   const partnerLeft = status === "ended" && Boolean(lastChatRef.current.chatId) && !leavingRef.current;
   const nickname = nicknameFor(shownChatId);
   const details = getChatDetails(shownChatId);
+  const showChat = partnerLeft || (status === "matched" && !(isLoading && messages.length === 0));
+
+  const chatRootRef = useRef(null);
+  useVisualViewportHeight(chatRootRef, showChat);
 
   // A new chat clears the "Reported" banner; the chat ending keeps it
   useEffect(() => {
@@ -135,7 +140,7 @@ const ChatRoom = () => {
     return (
       <CenterColumn>
         <Radar />
-        <div role="status" className="mt-8 flex flex-col items-center">
+        <div role="status" className="mt-6 flex flex-col items-center wide:mt-8">
           <h1 className="st-section-title max-w-[18ch]">Looking for someone to talk to</h1>
           {showNoMatchMessage && (
             <p className="mt-3 max-w-[40ch] text-muted">
@@ -153,16 +158,6 @@ const ChatRoom = () => {
           )}
         </div>
 
-        <div className="st-card mt-10 flex w-full items-start gap-4 p-5 text-left">
-          <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-mist-2" aria-hidden="true">
-            <ShieldCheck size={22} strokeWidth={2.25} />
-          </span>
-          <div>
-            <p className="st-display text-lg font-bold">Stay anonymous</p>
-            <p className="text-muted">Keep your name, section and socials out of the chat.</p>
-          </div>
-        </div>
-
         <button
           type="button"
           onClick={async () => {
@@ -175,6 +170,16 @@ const ChatRoom = () => {
         >
           Stop looking
         </button>
+
+        <div className="st-card mt-8 flex w-full items-start gap-4 p-5 text-left">
+          <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-mist-2" aria-hidden="true">
+            <ShieldCheck size={22} strokeWidth={2.25} />
+          </span>
+          <div>
+            <p className="st-display text-lg font-bold">Stay anonymous</p>
+            <p className="text-muted">Keep your name, section and socials out of the chat.</p>
+          </div>
+        </div>
       </CenterColumn>
     );
   }
@@ -203,7 +208,7 @@ const ChatRoom = () => {
     );
   }
 
-  if ((isLoading && messages.length === 0 && !partnerLeft) || (status !== "matched" && !partnerLeft)) {
+  if (!showChat) {
     return (
       <CenterColumn>
         <div className="mt-16 flex flex-col items-center gap-4" role="status">
@@ -217,16 +222,19 @@ const ChatRoom = () => {
   const statusLine = partnerLeft ? "Left the chat" : isPartnerTyping ? "typing…" : "Online";
 
   return (
-    <div className="st-page flex h-dvh min-h-0 flex-col">
-      <header className="border-b-2 border-line bg-paper">
-        <div className="mx-auto flex min-h-[68px] max-w-[920px] items-center gap-2 px-3 py-2.5 chat:gap-3 chat:px-6">
+    <div ref={chatRootRef} className="st-page flex h-dvh min-h-0 flex-col overflow-hidden px-0">
+      <header className="border-b-2 border-line bg-paper pt-[env(safe-area-inset-top)]">
+        <div className="st-safe-x mx-auto flex min-h-[64px] max-w-[920px] items-center gap-1.5 py-2 xs:gap-2 chat:min-h-[68px] chat:gap-3">
           <button type="button" onClick={handleLeave} className="st-icon-btn -ml-1" aria-label="Leave chat">
             <ArrowLeft size={22} strokeWidth={2.5} aria-hidden="true" />
           </button>
           <Avatar tone="stranger" online={!partnerLeft} faded={partnerLeft} />
           <div className="min-w-0 flex-1 leading-tight">
-            <h1 className="st-display truncate text-lg font-bold">{nickname}</h1>
-            <p role="status" className={`truncate text-sm ${partnerLeft ? "text-muted-2" : "text-online-text"}`}>
+            {/* Narrow phones: let the nickname wrap to two lines instead of "Gentle B…" */}
+            <h1 className="st-display line-clamp-2 break-words text-base font-bold xs:line-clamp-1 xs:text-lg">
+              {nickname}
+            </h1>
+            <p role="status" className={`truncate text-[13px] xs:text-sm ${partnerLeft ? "text-muted-2" : "text-online-text"}`}>
               {statusLine}
             </p>
           </div>
@@ -240,7 +248,7 @@ const ChatRoom = () => {
 
       {reported && (
         <div role="status" className="border-b-2 border-line bg-coral-soft">
-          <p className="mx-auto flex max-w-[920px] items-start gap-2.5 px-3 py-3 text-[15px] font-medium chat:px-6">
+          <p className="st-safe-x mx-auto flex max-w-[920px] items-start gap-2.5 py-3 text-[15px] font-medium">
             <Flag size={17} strokeWidth={2.5} className="mt-0.5 shrink-0" aria-hidden="true" />
             Reported. Admins will review this chat. You can keep talking or hit Next.
           </p>
@@ -248,7 +256,7 @@ const ChatRoom = () => {
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" aria-live="polite">
-        <div className="mx-auto flex max-w-[920px] flex-col px-3 py-5 chat:px-6">
+        <div className="st-safe-x mx-auto flex max-w-[920px] flex-col py-5">
           <div className="mb-6 flex flex-col items-center gap-3">
             <span className="st-pill text-[14px]">
               Matched on {topicLabel(details?.topic)}

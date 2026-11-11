@@ -63,7 +63,7 @@ const MessageInput = () => {
 
   return (
     <div className="border-t-2 border-line bg-paper pb-[env(safe-area-inset-bottom)]">
-      <form onSubmit={handleSubmit} className="mx-auto max-w-[920px] px-3 pb-2 pt-3 chat:px-6 chat:pb-3">
+      <form onSubmit={handleSubmit} className="st-safe-x mx-auto max-w-[920px] py-2.5 chat:pb-2 chat:pt-3">
         <div className="flex items-center gap-2.5">
           <label htmlFor="message-input" className="sr-only">
             Message
@@ -82,14 +82,21 @@ const MessageInput = () => {
           />
           <button
             type="submit"
-            className="inline-flex size-[52px] shrink-0 items-center justify-center rounded-full bg-ink transition-colors hover:bg-ink-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex size-[52px] shrink-0 items-center justify-center rounded-full bg-ink transition-[background-color,transform] duration-100 hover:bg-ink-hover active:scale-95 active:bg-ink-hover disabled:cursor-not-allowed disabled:opacity-50"
+            // Keep focus in the input so the phone keyboard stays open between messages
+            onMouseDown={(e) => e.preventDefault()}
             disabled={!text.trim() || isSending || !canSend}
             aria-label="Send"
           >
             <Send size={21} strokeWidth={2.5} className="text-pili" aria-hidden="true" />
           </button>
         </div>
-        <div className="mt-1.5 flex min-h-[18px] justify-between gap-3 px-2 text-xs text-muted-2">
+        {/* Hint is desktop-only; on phones the row only appears for the length counter */}
+        <div
+          className={`mt-1.5 min-h-[18px] justify-between gap-3 px-2 text-xs text-muted-2 ${
+            text.length > 800 ? "flex" : "hidden chat:flex"
+          }`}
+        >
           <span className="hidden chat:inline">{canSend ? "Press Enter to send" : ""}</span>
           {text.length > 800 && <span className="ml-auto">{text.length}/1000</span>}
         </div>

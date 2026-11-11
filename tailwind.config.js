@@ -2,10 +2,12 @@ import daisyui from "daisyui";
 
 /** @type {import('tailwindcss').Config} */
 export default {
+  // hover: utilities only apply on devices that can hover (no sticky hover after a tap)
+  future: { hoverOnlyWhenSupported: true },
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
-      // SORSU Talk tokens (mirrored as CSS variables in src/index.css)
+      // SoTalk tokens (mirrored as CSS variables in src/index.css)
       colors: {
         ground: "#D7E8E4",
         dot: "#BFD7D2",
@@ -24,7 +26,8 @@ export default {
         body: ['"Atkinson Hyperlegible Next"', "system-ui", "sans-serif"],
       },
       screens: {
-        // Chat layout breakpoint, and landing / matching breakpoint
+        // Small phones, chat layout, and landing / matching breakpoints
+        xs: "400px",
         chat: "600px",
         wide: "760px",
       },
