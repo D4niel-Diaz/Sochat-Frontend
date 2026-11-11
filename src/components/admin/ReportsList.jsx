@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { adminService } from "../../api/services/adminService";
 import { AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import toast from "react-hot-toast";
@@ -9,23 +9,21 @@ const ReportsList = () => {
   const [filter, setFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    fetchReports();
-  }, [filter]);
-
-  const fetchReports = async () => {
+  const fetchReports = useCallback(async () => {
     try {
       const response = await adminService.getReports(filter);
-
-      const responseData = response.data.data || response.data;
-      setReports(responseData || []);
+      setReports(response.data?.data || []);
     } catch (err) {
       logError("Failed to fetch reports:", err);
       toast.error("Failed to load reports");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filter]);
+
+  useEffect(() => {
+    fetchReports();
+  }, [fetchReports]);
 
   const handleResolve = async (reportId) => {
     try {

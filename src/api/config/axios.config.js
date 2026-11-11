@@ -1,134 +1,104 @@
 import axios from "axios";
-import { log, error, warn } from "../../utils/logger";
+import { log, error } from "../../utils/logger";
 
-// CRITICAL: Runtime environment detection for production
 const getApiBaseURL = () => {
-  // Check for explicit environment variable first
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  
-  // Runtime check for development vs production
-  const isDev = (() => {
-    try {
-      if (typeof import.meta !== 'undefined' && import.meta.env) {
-        return import.meta.env.DEV === true || import.meta.env.MODE === 'development';
-      }
-      // Fallback: check hostname
-      return typeof window !== 'undefined' && 
-             (window.location.hostname === 'localhost' || 
-              window.location.hostname === '127.0.0.1');
-    } catch {
-      return false;
-    }
-  })();
-  
-  if (isDev) {
-    return "/api/v1"; // Use Vite proxy in development
+
+  if (import.meta.env.DEV) {
+    return "/api/v1"; // Vite dev proxy
   }
-  
-  // Production default
+
   return "https://sochat-backend.onrender.com/api/v1";
 };
 
-const API_BASE_URL = getApiBaseURL();
-
 const axiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000, // Increased from 10s to 30s for slower connections
-  withCredentials: true,
+  baseURL: getApiBaseURL(),
+  timeout: 30000,
+  // Auth is a bearer token, not a cookie
+  withCredentials: false,
+  headers: { Accept: "application/json" },
 });
 
-// Store session token in a way that works in production
+// Guest session token, attached to guest requests that don't set their own header
 let currentSessionToken = null;
 
-// Function to set session token
 export const setSessionToken = (token) => {
   currentSessionToken = token;
 };
 
-// Function to get session token
 export const getSessionToken = () => currentSessionToken;
 
-axiosInstance.interceptors.request.use(
-  (config) => {
-    // Use stored token if Authorization header not already set
-    // Also check metadata for backward compatibility
-    if (!config.headers.Authorization) {
-      const tokenFromMetadata = config.metadata?.sessionToken;
-      const tokenFromStorage = currentSessionToken;
-      const sessionToken = tokenFromMetadata || tokenFromStorage;
-      
-      if (sessionToken) {
-        config.headers.Authorization = `Bearer ${sessionToken}`;
-      }
-    }
-    // Log request in development
-    if (import.meta.env.DEV) {
-      log(`🔄 API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    }
-    return config;
-  },
-  (requestError) => {
-    error('❌ Request Error:', requestError.message, requestError.config);
-    return Promise.reject(requestError);
+/** Error thrown by API calls; `status` is the HTTP status (0 when there was no response). */
+export class ApiError extends Error {
+  constructor(message, status = 0, data = null, url = null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+    this.url = url;
   }
-);
+}
+
+axiosInstance.interceptors.request.use((config) => {
+  const isAdminRequest = config.url?.startsWith("/admin");
+  if (!config.headers.Authorization && !isAdminRequest && currentSessionToken) {
+    config.headers.Authorization = `Bearer ${currentSessionToken}`;
+  }
+  if (import.meta.env.DEV) {
+    log(`🔄 API Request: ${config.method?.toUpperCase()} ${config.url}`);
+  }
+  return config;
+});
+
+const messageFor = (status, data) => {
+  switch (status) {
+    case 401:
+      return data?.message === "Invalid credentials"
+        ? "Invalid email or password"
+        : "Session expired. Please refresh the page.";
+    case 403:
+      return data?.message?.toLowerCase().includes("banned")
+        ? "You have been banned from this platform"
+        : "Access denied. You don't have permission to perform this action.";
+    case 404:
+      return data?.message || "Resource not found";
+    case 422: {
+      const firstError = data?.errors && Object.values(data.errors)[0];
+      if (firstError) return Array.isArray(firstError) ? firstError[0] : firstError;
+      return data?.message || "Validation failed";
+    }
+    case 429:
+      return "Please slow down. Too many requests.";
+    default:
+      return status >= 500
+        ? "Something went wrong. Please try again later."
+        : data?.message || "An error occurred";
+  }
+};
 
 axiosInstance.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (apiError) => {
-    error('❌ API Error:', {
+    error("❌ API Error:", {
       url: apiError.config?.url,
       status: apiError.response?.status,
-      statusText: apiError.response?.statusText,
-      data: apiError.response?.data,
-      message: apiError.message
+      message: apiError.message,
     });
+
     if (apiError.response) {
       const { status, data } = apiError.response;
-
-      switch (status) {
-        case 401:
-          if (data.message?.includes("banned")) {
-            throw new Error("You have been banned from this platform");
-          }
-          throw new Error("Session expired. Please refresh the page.");
-        case 403:
-          throw new Error("Access denied. You don't have permission to perform this action.");
-        case 404:
-          throw new Error("Resource not found");
-        case 422:
-          if (data.errors) {
-            const firstError = Object.values(data.errors)[0];
-            throw new Error(Array.isArray(firstError) ? firstError[0] : firstError);
-          }
-          throw new Error(data.message || "Validation failed");
-        case 429:
-          throw new Error("Please slow down. Too many requests.");
-        case 500:
-          throw new Error("Something went wrong. Please try again later.");
-        default:
-          throw new Error(data.message || "An error occurred");
-      }
-    } else if (apiError.request) {
-      error('❌ No response received:', apiError.request);
-      
-      // Provide more helpful error messages
-      if (apiError.code === 'ECONNABORTED' || apiError.message?.includes('timeout')) {
-        const baseUrl = apiError.config?.baseURL || 'backend';
-        throw new Error(`Backend server timeout. Is the backend running at ${baseUrl}? Check: http://localhost:8000/api/v1/health`);
-      } else if (apiError.code === 'ECONNREFUSED' || apiError.code === 'ERR_NETWORK') {
-        throw new Error("Cannot connect to backend server. Please ensure the backend is running on port 8000.");
-      }
-      
-      throw new Error("Connection lost. Please check your internet connection.");
-    } else {
-      error('❌ Request setup error:', apiError.message);
-      throw new Error("An unexpected error occurred");
+      throw new ApiError(messageFor(status, data), status, data, apiError.config?.url);
     }
+
+    if (apiError.code === "ECONNABORTED" || apiError.message?.includes("timeout")) {
+      throw new ApiError("The server took too long to respond. Please try again.");
+    }
+    if (apiError.request) {
+      throw new ApiError("Cannot reach the server. Please check your connection and try again.");
+    }
+    throw new ApiError("An unexpected error occurred");
   }
 );
 

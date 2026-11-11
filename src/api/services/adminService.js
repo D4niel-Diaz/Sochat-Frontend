@@ -1,59 +1,23 @@
 import axiosInstance from "../config/axios.config";
 
+// Admin token is kept separate from the guest session token
+let adminToken = null;
+
+export const setAdminToken = (token) => {
+  adminToken = token;
+};
+
+const auth = () => ({ headers: { Authorization: `Bearer ${adminToken}` } });
+
 export const adminService = {
-  login: async (email, password) => {
-    const response = await axiosInstance.post("/admin/login", {
-      email,
-      password,
-    });
-    return response;
-  },
-
-  getMetrics: async () => {
-    const response = await axiosInstance.get("/admin/metrics");
-    return response;
-  },
-
-  getActiveChats: async () => {
-    const response = await axiosInstance.get("/admin/chats");
-    return response;
-  },
-
-  getReports: async (status = "all") => {
-    const response = await axiosInstance.get("/admin/reports", {
-      params: { status },
-    });
-    return response;
-  },
-
-  banGuest: async (guestId) => {
-    const response = await axiosInstance.post("/admin/ban", {
-      guest_id: guestId,
-    });
-    return response;
-  },
-
-  unbanGuest: async (guestId) => {
-    const response = await axiosInstance.post("/admin/unban", {
-      guest_id: guestId,
-    });
-    return response;
-  },
-
-  resolveReport: async (reportId) => {
-    const response = await axiosInstance.post("/admin/report/resolve", {
-      report_id: reportId,
-    });
-    return response;
-  },
-
-  getBannedGuests: async () => {
-    const response = await axiosInstance.get("/admin/banned-guests");
-    return response;
-  },
-
-  getFlaggedMessages: async () => {
-    const response = await axiosInstance.get("/admin/flagged-messages");
-    return response;
-  },
+  login: (email, password) => axiosInstance.post("/admin/login", { email, password }),
+  logout: () => axiosInstance.post("/admin/logout", null, auth()),
+  getMetrics: () => axiosInstance.get("/admin/metrics", auth()),
+  getActiveChats: () => axiosInstance.get("/admin/chats", auth()),
+  getReports: (status = "all") => axiosInstance.get("/admin/reports", { ...auth(), params: { status } }),
+  banGuest: (guestId) => axiosInstance.post("/admin/ban", { guest_id: guestId }, auth()),
+  unbanGuest: (guestId) => axiosInstance.post("/admin/unban", { guest_id: guestId }, auth()),
+  resolveReport: (reportId) => axiosInstance.post("/admin/report/resolve", { report_id: reportId }, auth()),
+  getBannedGuests: () => axiosInstance.get("/admin/banned-guests", auth()),
+  getFlaggedMessages: () => axiosInstance.get("/admin/flagged-messages", auth()),
 };
