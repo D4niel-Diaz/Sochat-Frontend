@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useChat } from "../../contexts/ChatContext";
-import { useGuest } from "../../contexts/GuestContext";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import ChatControls from "./ChatControls";
 import { Loader2, Users, X, UserCheck } from "lucide-react";
 
 const ChatRoom = () => {
-  const { status, messages, isLoading, startChat, endChat, cancelSearch } = useChat();
-  const { guestId } = useGuest();
+  const { status, messages, isLoading, startChat, cancelSearch } = useChat();
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
   const noMatchTimeoutRef = useRef(null);
@@ -102,7 +100,7 @@ const ChatRoom = () => {
             Click the button below to find someone to chat with.
           </p>
           <button
-            onClick={startChat}
+            onClick={() => startChat().catch(() => {})}
             className="btn btn-primary btn-lg px-8 gap-2"
           >
             <Users size={20} />
@@ -130,7 +128,7 @@ const ChatRoom = () => {
     );
   }
 
-  if (status !== "matched" && status !== "active") {
+  if (status !== "matched") {
     return (
       <div className="h-screen bg-base-200 flex items-center justify-center">
         <div className="bg-base-100 rounded-lg shadow-xl p-8 max-w-md w-full text-center">
@@ -141,8 +139,7 @@ const ChatRoom = () => {
     );
   }
 
-  if (status === "matched" || status === "active") {
-    return (
+  return (
       <div className="h-screen bg-base-200 flex flex-col">
         <div className="bg-base-100 shadow-sm px-6 py-4 flex items-center justify-between border-b border-base-300">
           <div className="flex items-center gap-3">
@@ -161,14 +158,13 @@ const ChatRoom = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 bg-base-200">
-          <MessageList messages={messages} guestId={guestId} />
+          <MessageList messages={messages} />
           <div ref={messagesEndRef} />
         </div>
 
         <MessageInput />
       </div>
-    );
-  }
+  );
 };
 
 export default ChatRoom;

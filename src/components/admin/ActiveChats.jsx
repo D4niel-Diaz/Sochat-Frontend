@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { adminService } from "../../api/services/adminService";
-import { MessageSquare, Clock, CheckCircle, Ban } from "lucide-react";
+import { MessageSquare, Clock, Ban } from "lucide-react";
 import toast from "react-hot-toast";
 import { error as logError } from "../../utils/logger";
 

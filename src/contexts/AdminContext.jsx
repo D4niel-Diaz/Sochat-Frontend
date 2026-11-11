@@ -1,9 +1,13 @@
-import { createContext, useContext, useState, useEffect } from "react";
-import { adminService } from "../api/services/adminService";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { adminService, setAdminToken } from "../api/services/adminService";
+import axiosInstance from "../api/config/axios.config";
 import toast from "react-hot-toast";
+
+const STORAGE_KEY = "adminAuth";
 
 const AdminContext = createContext(null);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAdmin = () => {
   const context = useContext(AdminContext);
   if (!context) {
@@ -12,30 +16,45 @@ export const useAdmin = () => {
   return context;
 };
 
+const readSavedAuth = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    return saved?.token ? saved : null;
+  } catch {
+    return null;
+  }
+};
+
 export const AdminProvider = ({ children }) => {
-  const [adminId, setAdminId] = useState(null);
-  const [name, setName] = useState(null);
-  const [email, setEmail] = useState(null);
-  const [role, setRole] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [auth, setAuth] = useState(() => {
+    const saved = readSavedAuth();
+    setAdminToken(saved?.token ?? null);
+    return saved;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const savedAuth = localStorage.getItem('adminAuth');
-    if (savedAuth) {
-      try {
-        const authData = JSON.parse(savedAuth);
-        setAdminId(authData.adminId);
-        setName(authData.name);
-        setEmail(authData.email);
-        setRole(authData.role);
-        setIsAuthenticated(true);
-      } catch (e) {
-        localStorage.removeItem('adminAuth');
-      }
+  const clearAuth = useCallback(() => {
+    setAdminToken(null);
+    setAuth(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // storage unavailable; state is already cleared
     }
   }, []);
+
+  // An expired or revoked admin token signs the admin out
+  useEffect(() => {
+    const id = axiosInstance.interceptors.response.use(undefined, (err) => {
+      if (err?.status === 401 && err.url?.startsWith("/admin") && err.url !== "/admin/login") {
+        clearAuth();
+        toast.error("Your admin session has expired. Please log in again.");
+      }
+      return Promise.reject(err);
+    });
+    return () => axiosInstance.interceptors.response.eject(id);
+  }, [clearAuth]);
 
   const login = async (emailInput, password) => {
     try {
@@ -43,26 +62,26 @@ export const AdminProvider = ({ children }) => {
       setError(null);
 
       const response = await adminService.login(emailInput, password);
-
-      const responseData = response.data.data || response.data;
-      if (!responseData || !responseData.admin_id) {
-        throw new Error('Invalid response from server');
+      const data = response.data?.data;
+      if (!data?.admin_id || !data?.token) {
+        throw new Error("Invalid response from server");
       }
 
       const authData = {
-        adminId: responseData.admin_id,
-        name: responseData.name,
-        email: responseData.email,
-        role: responseData.role,
+        adminId: data.admin_id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        token: data.token,
       };
 
-      setAdminId(authData.adminId);
-      setName(authData.name);
-      setEmail(authData.email);
-      setRole(authData.role);
-      setIsAuthenticated(true);
-
-      localStorage.setItem('adminAuth', JSON.stringify(authData));
+      setAdminToken(authData.token);
+      setAuth(authData);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(authData));
+      } catch {
+        // stays logged in for this page load only
+      }
 
       toast.success("Logged in successfully");
       return true;
@@ -75,32 +94,27 @@ export const AdminProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    setAdminId(null);
-    setName(null);
-    setEmail(null);
-    setRole(null);
-    setIsAuthenticated(false);
+  const logout = async () => {
+    try {
+      await adminService.logout();
+    } catch {
+      // token may already be invalid; clear locally regardless
+    }
+    clearAuth();
     setError(null);
-    localStorage.removeItem('adminAuth');
     toast.success("Logged out successfully");
   };
 
-  const checkAuth = () => {
-    return isAuthenticated;
-  };
-
   const value = {
-    adminId,
-    name,
-    email,
-    role,
-    isAuthenticated,
+    adminId: auth?.adminId ?? null,
+    name: auth?.name ?? null,
+    email: auth?.email ?? null,
+    role: auth?.role ?? null,
+    isAuthenticated: Boolean(auth?.token),
     isLoading,
     error,
     login,
     logout,
-    checkAuth,
   };
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;

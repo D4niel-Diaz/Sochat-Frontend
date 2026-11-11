@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "clean": "node clean-build.js",
-    "build:clean": "node clean-build.js && vite build && node -e \"require('./clean-build.js').verifyProductionBuild()\"",
-    "build:force": "node clean-build.js && rm -rf .vercel && vite build",
+    "build:clean": "node clean-build.js && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
@@ -19,11 +18,10 @@
     "axios": "^1.7.7",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.459.0",
-    "pusher-js": "^8.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.4.1",
-    "react-router-dom": "^6.28.0",
+    "react-router-dom": "^7.18.5",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {

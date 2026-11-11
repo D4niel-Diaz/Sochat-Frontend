@@ -1,11 +1,15 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { guestService } from "../api/services/guestService";
 import { setSessionToken as setAxiosSessionToken } from "../api/config/axios.config";
-import toast from "react-hot-toast";
-import { log, error } from "../utils/logger";
+import { error as logError } from "../utils/logger";
+
+const STORAGE_KEY = "guestSession";
+// Refresh the 24h session when this much time is left
+const REFRESH_BEFORE_EXPIRY_MS = 4 * 60 * 60 * 1000;
 
 const GuestContext = createContext(null);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useGuest = () => {
   const context = useContext(GuestContext);
   if (!context) {
@@ -14,173 +18,121 @@ export const useGuest = () => {
   return context;
 };
 
+// Per-tab storage: a reload keeps the same guest (and chat); a new tab is a new guest
+const storage = {
+  read() {
+    try {
+      return JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "null");
+    } catch {
+      return null;
+    }
+  },
+  write(session) {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    } catch {
+      // storage unavailable: the session just won't survive a reload
+    }
+  },
+  clear() {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  },
+};
+
 export const GuestProvider = ({ children }) => {
-  const [guestId, setGuestId] = useState(null);
-  const [sessionToken, setSessionToken] = useState(null);
-  const [expiresAt, setExpiresAt] = useState(null);
+  const [session, setSession] = useState(null); // { guestId, sessionToken, expiresAt }
   const [isLoading, setIsLoading] = useState(true);
   const [isBanned, setIsBanned] = useState(false);
   const [error, setError] = useState(null);
+  const startedRef = useRef(false);
 
-  const createSession = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // CRITICAL: Don't add extra timeout - axios already has 30s timeout
-      // The extra timeout was causing premature failures in production
-      const response = await guestService.createSession();
-
-      log('🔍 Full response structure:', response);
-      log('🔍 response.data:', response.data);
-
-      // Handle both response formats: { success, data, message } or direct data
-      const responseData = response.data.data || response.data;
-
-      if (!responseData || !responseData.guest_id) {
-        error('❌ Invalid response structure:', response.data);
-        throw new Error('Invalid response from server');
-      }
-
-      setGuestId(responseData.guest_id);
-      setSessionToken(responseData.session_token);
-      setExpiresAt(responseData.expires_at);
-      setIsBanned(false);
-      
-      // Set token in axios config for all future requests
-      setAxiosSessionToken(responseData.session_token);
-    } catch (err) {
-      // CRITICAL: Provide better error messages for production
-      let errorMessage = err.message;
-      
-      // Check if it's a production backend connection issue
-      if (err.message?.includes('timeout') || err.message?.includes('ECONNABORTED')) {
-        const isProduction = typeof window !== 'undefined' && 
-                            window.location.hostname !== 'localhost' && 
-                            window.location.hostname !== '127.0.0.1';
-        
-        if (isProduction) {
-          errorMessage = "Unable to connect to server. The backend may be starting up or experiencing issues. Please try again in a moment.";
-        } else {
-          errorMessage = "Backend server timeout. Is the backend running? Check: http://localhost:8000/api/v1/health";
-        }
-      } else if (err.message?.includes('ECONNREFUSED') || err.message?.includes('ERR_NETWORK')) {
-        const isProduction = typeof window !== 'undefined' && 
-                            window.location.hostname !== 'localhost' && 
-                            window.location.hostname !== '127.0.0.1';
-        
-        if (isProduction) {
-          errorMessage = "Cannot connect to server. Please check if the backend service is available.";
-        } else {
-          errorMessage = "Cannot connect to backend server. Please ensure the backend is running on port 8000.";
-        }
-      }
-      
-      setError(errorMessage);
-      if (err.message.includes("banned")) {
-        setIsBanned(true);
-      }
-      // Don't show toast here - let the UI handle it gracefully
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const refreshSession = async () => {
-    if (!sessionToken) return;
-
-    try {
-      setError(null);
-      const response = await guestService.refreshSession(sessionToken);
-
-      // Handle both response formats
-      const responseData = response.data.data || response.data;
-      if (!responseData || !responseData.expires_at) {
-        error('❌ Invalid refresh response structure:', response.data);
-        throw new Error('Invalid response from server');
-      }
-
-      setExpiresAt(responseData.expires_at);
-      
-      // Update token in axios config
-      setAxiosSessionToken(sessionToken);
-    } catch (err) {
-      setError(err.message);
-      if (err.message.includes("banned")) {
-        setIsBanned(true);
-      }
-      toast.error(err.message);
-      throw err;
-    }
-  };
-
-  const clearSession = () => {
-    setGuestId(null);
-    setSessionToken(null);
-    setExpiresAt(null);
-    setIsBanned(false);
-    setError(null);
-  };
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      // Force loading to false after 15 seconds if session creation hasn't completed
-      if (isLoading) {
-        setIsLoading(false);
-        setError("Unable to connect to server. Please refresh the page.");
-      }
-    }, 15000);
-
-    createSession().catch(() => {
-      // If session creation fails, still allow the app to render
-      // The landing page will handle showing the error
-      setIsLoading(false);
-    });
-
-    return () => clearTimeout(timeoutId);
+  const applySession = useCallback((next) => {
+    setSession(next);
+    setAxiosSessionToken(next?.sessionToken ?? null);
+    if (next) storage.write(next);
+    else storage.clear();
   }, []);
 
+  const handleSessionError = useCallback((err) => {
+    if (err?.status === 403) {
+      setIsBanned(true);
+      setError("You have been banned from this platform");
+    } else {
+      setError(err?.message || "Unable to connect to server. Please refresh the page.");
+    }
+  }, []);
+
+  const createSession = useCallback(async () => {
+    setError(null);
+    const response = await guestService.createSession();
+    const data = response.data?.data;
+    if (!data?.guest_id || !data?.session_token) {
+      throw new Error("Invalid response from server");
+    }
+    setIsBanned(false);
+    applySession({ guestId: data.guest_id, sessionToken: data.session_token, expiresAt: data.expires_at });
+  }, [applySession]);
+
+  /** Extend a stored session; resolves false if it is no longer valid. */
+  const refreshStoredSession = useCallback(async (stored) => {
+    try {
+      const response = await guestService.refreshSession(stored.sessionToken);
+      applySession({ ...stored, expiresAt: response.data?.data?.expires_at ?? stored.expiresAt });
+      return true;
+    } catch (err) {
+      if (err?.status === 403) {
+        applySession(null);
+        handleSessionError(err);
+        return true; // banned: don't silently create a fresh identity
+      }
+      return false;
+    }
+  }, [applySession, handleSessionError]);
+
+  // Initial load: reuse this tab's session if it is still valid, else create one
   useEffect(() => {
-    if (!expiresAt) return;
+    if (startedRef.current) return; // StrictMode runs effects twice in dev
+    startedRef.current = true;
 
-    const expiresTime = new Date(expiresAt).getTime();
-    const now = Date.now();
-    const timeUntilExpiry = expiresTime - now;
+    (async () => {
+      try {
+        const stored = storage.read();
+        const restored = stored?.sessionToken && (await refreshStoredSession(stored));
+        if (!restored) await createSession();
+      } catch (err) {
+        logError("Session setup failed:", err);
+        handleSessionError(err);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [createSession, refreshStoredSession, handleSessionError]);
 
-    if (timeUntilExpiry <= 0) {
-      clearSession();
-      createSession();
-      return;
-    }
+  // Refresh shortly before the 24h session expires
+  useEffect(() => {
+    if (!session?.expiresAt) return;
 
-    const refreshTime = timeUntilExpiry - 4 * 60 * 60 * 1000;
+    const delay = new Date(session.expiresAt).getTime() - Date.now() - REFRESH_BEFORE_EXPIRY_MS;
+    const timer = setTimeout(async () => {
+      if (!(await refreshStoredSession(session))) {
+        createSession().catch(handleSessionError);
+      }
+    }, Math.max(delay, 0));
 
-    if (refreshTime > 0) {
-      const refreshTimer = setTimeout(async () => {
-        try {
-          await refreshSession();
-        } catch (refreshErr) {
-          error("Session refresh failed, creating new session:", refreshErr);
-          clearSession();
-          createSession();
-        }
-      }, refreshTime);
-
-      return () => clearTimeout(refreshTimer);
-    }
-  }, [expiresAt]);
+    return () => clearTimeout(timer);
+  }, [session, refreshStoredSession, createSession, handleSessionError]);
 
   const value = {
-    guestId,
-    sessionToken,
-    expiresAt,
+    guestId: session?.guestId ?? null,
+    sessionToken: session?.sessionToken ?? null,
+    expiresAt: session?.expiresAt ?? null,
     isLoading,
     isBanned,
     error,
-    createSession,
-    refreshSession,
-    clearSession,
   };
 
   return <GuestContext.Provider value={value}>{children}</GuestContext.Provider>;

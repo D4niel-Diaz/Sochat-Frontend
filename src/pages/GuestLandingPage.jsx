@@ -11,10 +11,6 @@ const GuestLandingPage = () => {
   const navigate = useNavigate();
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [chatError, setChatError] = useState(null);
-  // Default matching preferences (hidden from UI)
-  const role = "learner";
-  const subject = "General";
-  const availability = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
 
   const handleStartChat = async () => {
     if (error || isBanned) {
@@ -24,7 +20,7 @@ const GuestLandingPage = () => {
     setIsStartingChat(true);
     setChatError(null);
     try {
-      await startChat(role, subject, availability);
+      await startChat();
     } catch (err) {
       setChatError(err.message || "Failed to start chat");
       setIsStartingChat(false);
@@ -32,8 +28,8 @@ const GuestLandingPage = () => {
   };
 
   useEffect(() => {
-    // Navigate to chat only when status changes from idle to waiting/matched
-    if (isStartingChat && (status === "waiting" || status === "matched")) {
+    // Go to the chat once matching starts, or when a chat was restored after a reload
+    if ((isStartingChat && status === "waiting") || status === "matched") {
       navigate("/chat");
       setIsStartingChat(false);
     }
@@ -90,10 +86,10 @@ const GuestLandingPage = () => {
             </p>
           </div>
 
-          {chatError && (
+          {(chatError || error) && (
             <div className="alert alert-error mb-6">
               <Shield size={20} />
-              <span>{chatError}</span>
+              <span>{chatError || error}</span>
             </div>
           )}
 

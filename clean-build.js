@@ -32,4 +32,4 @@ pathsToClean.forEach(path => {
   }
 });
 
-console.log('✅ Clean complete. Starting build...');
+console.log('✅ Clean complete.');

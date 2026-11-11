@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 
-const MessageList = ({ messages, guestId }) => {
+const MessageList = ({ messages }) => {
   if (messages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">

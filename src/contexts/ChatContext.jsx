@@ -1,29 +1,31 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { chatService } from "../api/services/chatService";
-import { presenceService } from "../api/services/presenceService";
+import { presenceService, DEFAULT_MATCH_PREFERENCES } from "../api/services/presenceService";
 import { useGuest } from "./GuestContext";
 import toast from "react-hot-toast";
-import { log, error as logError, warn as logWarn } from "../utils/logger";
+import { error as logError, warn as logWarn } from "../utils/logger";
 import {
   connectSocket,
-  disconnectSocket,
   onMatchFound,
   onMessage,
   onTyping,
   onChatEnded,
   joinPresencePool,
   leavePresencePool,
+  setActiveChat,
   sendMessage as sendSocketMessage,
   endChat as endSocketChat,
   isConnected,
-  getCurrentSessionToken,
 } from "../lib/socketClient";
 
 const ChatContext = createContext(null);
 
 const POLLING_INTERVAL_MATCHING = Number(import.meta.env.VITE_POLLING_INTERVAL_MATCHING || 3000);
 const POLLING_INTERVAL_MESSAGES = Number(import.meta.env.VITE_POLLING_INTERVAL_MESSAGES || 2000);
+const HEARTBEAT_INTERVAL = 30000;
+const TYPING_DISPLAY_MS = 3000;
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useChat = () => {
   const context = useContext(ChatContext);
   if (!context) {
@@ -32,626 +34,336 @@ export const useChat = () => {
   return context;
 };
 
+/** Append messages that aren't already in the list (dedupe by message_id). */
+const mergeMessages = (prev, incoming) => {
+  const ids = new Set(prev.map((m) => m.message_id));
+  const fresh = incoming.filter((m) => m.message_id && !ids.has(m.message_id));
+  return fresh.length ? [...prev, ...fresh] : prev;
+};
+
 export const ChatProvider = ({ children }) => {
   const { sessionToken, guestId } = useGuest();
 
   const [chatId, setChatId] = useState(null);
   const [partnerId, setPartnerId] = useState(null);
-  const [status, setStatus] = useState("idle");
+  const [status, setStatus] = useState("idle"); // idle | waiting | matched | ended
   const [messages, setMessages] = useState([]);
-  const [isPolling, setIsPolling] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
 
-  const pollingIntervalRef = useRef(null);
-  const isFetchingRef = useRef(false);
-  const unsubscribeMatchRef = useRef(null);
-  const unsubscribeMessageRef = useRef(null);
-  const previousChatIdRef = useRef(null);
-  const heartbeatIntervalRef = useRef(null);
   const statusRef = useRef(status);
   const chatIdRef = useRef(chatId);
+  const busyRef = useRef(false);
+  statusRef.current = status;
+  chatIdRef.current = chatId;
 
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
-
-  useEffect(() => {
-    chatIdRef.current = chatId;
-  }, [chatId]);
-
-  const startChat = useCallback(async (role = "learner", subject = "General", availability = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18]) => {
-    if (!sessionToken || isFetchingRef.current) return;
-
-    try {
-      isFetchingRef.current = true;
-      setIsLoading(true);
-      setError(null);
-
-      // CRITICAL: Opt in to matching (mutual intent) with role/subject/availability
-      await presenceService.optIn(sessionToken, role, subject, availability);
-
-      if (isWebSocketConnected) {
-        setStatus("waiting");
-        setChatId(null);
-        setPartnerId(null);
-        setMessages([]);
-        joinPresencePool();
-        return;
-      }
-
-      const response = await chatService.startChat(sessionToken);
-
-      log('🔍 Start chat response:', response.data);
-
-      // Handle both response formats
-      const responseData = response.data.data || response.data;
-      if (!responseData || !responseData.status) {
-        logError('❌ Invalid start chat response structure:', response.data);
-        throw new Error('Invalid response from server');
-      }
-
-      if (responseData.status === "waiting") {
-        setStatus("waiting");
-        setChatId(null);
-        setPartnerId(null);
-      } else if (responseData.status === "matched") {
-        // Only set matched state if we have valid chat data
-        if (responseData.chat_id && responseData.partner_id) {
-          setChatId(responseData.chat_id);
-          setPartnerId(responseData.partner_id);
-          setStatus("matched");
-          setMessages([]);
-          // Only show toast if this is a new match (not re-entering existing chat)
-          if (!previousChatIdRef.current) {
-            toast.success("You've been matched with someone!");
-          }
-        } else {
-          // Invalid match data, treat as waiting
-          setStatus("waiting");
-          setChatId(null);
-          setPartnerId(null);
-        }
-      } else if (responseData.status === "already_matched") {
-        // Only set matched state if we have valid chat data
-        if (responseData.chat_id && responseData.partner_id) {
-          setChatId(responseData.chat_id);
-          setPartnerId(responseData.partner_id);
-          setStatus("matched");
-          setMessages([]);
-          // Only show toast if this is a new match
-          if (!previousChatIdRef.current) {
-            toast.success("You've been matched with someone!");
-          }
-        } else {
-          // Invalid match data, treat as waiting
-          setStatus("waiting");
-          setChatId(null);
-          setPartnerId(null);
-        }
-      }
-    } catch (err) {
-      setError(err.message);
-      // Only show error toast if not already waiting (to avoid spam during polling)
-      if (status !== "waiting") {
-        toast.error(err.message);
-      }
-    } finally {
-      setIsLoading(false);
-      isFetchingRef.current = false;
-    }
-  }, [sessionToken, status, isWebSocketConnected]);
-
-  const fetchMessages = useCallback(async () => {
-    if (!sessionToken || !chatId || isFetchingRef.current) return;
-
-    try {
-      isFetchingRef.current = true;
-      const response = await chatService.getMessages(sessionToken, chatId);
-
-      log('🔍 Get messages response:', response.data);
-
-      // Handle both response formats
-      const responseData = response.data.data || response.data;
-      const newMessages = responseData?.messages || [];
-
-      // Enhanced deduplication with time window (5 seconds)
-      const now = Date.now();
-      const DEDUP_WINDOW = 5000; // 5 seconds
-
-      setMessages((prev) => {
-        const existingIds = new Set(prev.map((m) => m.message_id));
-        const recentMessages = new Map(
-          prev
-            .filter((m) => now - new Date(m.created_at).getTime() < DEDUP_WINDOW)
-            .map((m) => [m.message_id, m])
-        );
-
-        const uniqueNewMessages = newMessages.filter((m) => {
-          // Skip if already exists
-          if (existingIds.has(m.message_id)) return false;
-
-          // Skip if similar message exists in recent window (possible duplicate)
-          const similarRecent = Array.from(recentMessages.values()).find(
-            (recent) =>
-              recent.content === m.content &&
-              recent.sender === m.sender &&
-              Math.abs(new Date(recent.created_at).getTime() - new Date(m.created_at).getTime()) < DEDUP_WINDOW
-          );
-
-          return !similarRecent;
-        });
-
-        return [...prev, ...uniqueNewMessages];
-      });
-    } catch (err) {
-      if (err.message.includes("not found") || err.message.includes("ended")) {
-        setStatus("ended");
-        setChatId(null);
-        setPartnerId(null);
-        setMessages([]);
-        stopPolling();
-      } else {
-        setError(err.message);
-      }
-    } finally {
-      isFetchingRef.current = false;
-    }
-  }, [sessionToken, chatId]);
-
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-    setIsPolling(false);
+  const enterChat = useCallback((newChatId, newPartnerId, { announce = true } = {}) => {
+    setChatId(Number(newChatId));
+    setPartnerId(newPartnerId ?? null);
+    setStatus("matched");
+    setMessages([]);
+    setActiveChat(newChatId);
+    if (announce) toast.success("You've been matched with someone!");
   }, []);
 
-  const startPolling = useCallback(() => {
-    if (pollingIntervalRef.current) return;
-
-    setIsPolling(true);
-
-    // CRITICAL: Only poll if WebSocket is NOT connected
-    if (status === "waiting" && !isWebSocketConnected) {
-      pollingIntervalRef.current = setInterval(() => {
-        // Don't poll if already matched
-        if (statusRef.current !== "waiting") {
-          stopPolling();
-          return;
-        }
-        startChat();
-      }, POLLING_INTERVAL_MATCHING);
-    } else if ((status === "matched" || status === "active") && !isWebSocketConnected) {
-      pollingIntervalRef.current = setInterval(() => {
-        // Don't poll if no longer in chat
-        if (!chatIdRef.current || (statusRef.current !== "matched" && statusRef.current !== "active")) {
-          stopPolling();
-          return;
-        }
-        fetchMessages();
-      }, POLLING_INTERVAL_MESSAGES);
-    }
-  }, [status, startChat, fetchMessages, isWebSocketConnected]);
-
-  const endChat = useCallback(async () => {
-    if (!sessionToken || !chatId) return;
-
-    try {
-      setIsLoading(true);
-
-      // CRITICAL: Verify chat is still active before ending
-      if (status !== "matched" && status !== "active") {
-        logWarn('Cannot end chat: not in active chat', { status, chatId });
-        return;
-      }
-
-      // CRITICAL: Opt out from matching when ending chat
-      await presenceService.optOut(sessionToken);
-
-      // End chat via WebSocket server
-      await endSocketChat(chatId);
-
-      // Clear all match state completely
-      setChatId(null);
-      setPartnerId(null);
-      setStatus("ended");
-      setMessages([]);
-      setError(null);
-      previousChatIdRef.current = null;
-      stopPolling();
-
-      toast.success("Chat ended");
-    } catch (err) {
-      setError(err.message);
-      toast.error(err.message);
-      // Still clear state on error to prevent stuck UI
-      setChatId(null);
-      setPartnerId(null);
-      setStatus("ended");
-      setMessages([]);
-      previousChatIdRef.current = null;
-      stopPolling();
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sessionToken, chatId, status, stopPolling]);
-
-  const findNewMatch = useCallback(async () => {
-    if (!sessionToken) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Clear ended state
-      setStatus("idle");
-      setChatId(null);
-      setPartnerId(null);
-      setMessages([]);
-
-      // Start new matching process
-      await startChat();
-    } catch (err) {
-      setError(err.message);
-      toast.error(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sessionToken, startChat]);
-
-  const returnToLobby = useCallback(() => {
+  const resetChat = useCallback((nextStatus) => {
     setChatId(null);
     setPartnerId(null);
-    setStatus("idle");
+    setStatus(nextStatus);
     setMessages([]);
-    setError(null);
-    previousChatIdRef.current = null;
-    stopPolling();
-  }, [stopPolling]);
+    setIsPartnerTyping(false);
+    setActiveChat(null);
+  }, []);
 
-  const cancelSearch = useCallback(async () => {
-    if (!sessionToken) return;
+  const handlePartnerEnded = useCallback(() => {
+    if (statusRef.current !== "matched") return;
+    resetChat("ended");
+    toast("Your chat partner has ended the conversation.", { icon: "ℹ️" });
+  }, [resetChat]);
 
-    try {
-      setIsLoading(true);
-
-      // Opt out from matching
-      await presenceService.optOut(sessionToken);
-      leavePresencePool();
-
-      // Clear all match state
-      setChatId(null);
-      setPartnerId(null);
-      setStatus("idle");
-      setMessages([]);
-      setError(null);
-      previousChatIdRef.current = null;
-      stopPolling();
-
-      toast("Search cancelled", { icon: "ℹ️" });
-    } catch (err) {
-      setError(err.message);
-      toast.error(err.message);
-    } finally {
-      setIsLoading(false);
+  /** Handle a /chat/start response (REST fallback path). */
+  const applyStartResult = useCallback((data) => {
+    if ((data?.status === "matched" || data?.status === "already_matched") && data.chat_id) {
+      enterChat(data.chat_id, data.partner_id, { announce: data.status === "matched" });
     }
-  }, [sessionToken, stopPolling]);
+  }, [enterChat]);
 
-  const sendMessage = useCallback(async (content) => {
-    if (!sessionToken || !chatId || !content.trim()) return;
+  const startChat = useCallback(async (preferences = DEFAULT_MATCH_PREFERENCES) => {
+    if (!sessionToken || busyRef.current) return;
+    busyRef.current = true;
+    setIsLoading(true);
+    setError(null);
 
     try {
-      let message;
-      
-      // Try WebSocket first, fallback to HTTP API if not connected
-      if (isWebSocketConnected) {
-        try {
-          message = await sendSocketMessage(chatId, content.trim());
-        } catch (socketErr) {
-          // If WebSocket fails, fallback to HTTP API
-          logWarn("WebSocket send failed, falling back to HTTP API:", socketErr);
-          const response = await chatService.sendMessage(sessionToken, chatId, content.trim());
-          message = response.data.data || response.data;
+      try {
+        await presenceService.optIn(sessionToken, preferences);
+      } catch (err) {
+        // Already in a chat (e.g. after a reload): go back into it
+        if (err?.status === 409 && err.data?.data?.chat_id) {
+          enterChat(err.data.data.chat_id, err.data.data.partner_id, { announce: false });
+          return;
         }
-      } else {
-        // Use HTTP API when WebSocket is not connected
-        log("WebSocket not connected, using HTTP API to send message");
-        const response = await chatService.sendMessage(sessionToken, chatId, content.trim());
-        message = response.data.data || response.data;
+        throw err;
       }
 
-      const newMessage = {
-        message_id: message.message_id,
-        sender: "you",
-        content: message.content,
-        created_at: message.created_at,
-        is_flagged: message.is_flagged,
-      };
+      resetChat("waiting");
 
-      setMessages((prev) => [...prev, newMessage]);
-
-      if (message.is_flagged) {
-        toast.warning("Your message was flagged for inappropriate content");
+      if (isConnected()) {
+        joinPresencePool();
+      } else {
+        const response = await chatService.startChat(sessionToken);
+        applyStartResult(response.data?.data);
       }
     } catch (err) {
       setError(err.message);
       toast.error(err.message);
       throw err;
+    } finally {
+      setIsLoading(false);
+      busyRef.current = false;
     }
-  }, [sessionToken, chatId, isWebSocketConnected]);
+  }, [sessionToken, enterChat, resetChat, applyStartResult]);
 
-  useEffect(() => {
-    if (status === "waiting" || status === "matched" || status === "active") {
-      if (!isWebSocketConnected) {
-        startPolling();
-      } else {
-        stopPolling();
-      }
-    } else {
-      stopPolling();
-    }
+  /** End the current chat: WebSocket when connected, REST otherwise. */
+  const endCurrentChat = useCallback(async () => {
+    const currentChatId = chatIdRef.current;
+    if (!currentChatId) return;
 
-    return () => stopPolling();
-  }, [status, isWebSocketConnected, startPolling, stopPolling]);
-
-  useEffect(() => {
-    if (!sessionToken || !guestId) return;
-
-    // CRITICAL: Use refs to track if component is still mounted
-    let isMounted = true;
-    let connectionAborted = false;
-
-    // CRITICAL: Debounce connection to prevent rapid reconnections
-    const connectionTimeout = setTimeout(() => {
-      if (connectionAborted) return;
-
-      // Check if already connected before attempting new connection
-      if (isConnected() && getCurrentSessionToken() === sessionToken) {
-        if (isMounted) {
-          setIsWebSocketConnected(true);
-        }
-        return;
-      }
-
-      // CRITICAL: Validate session token exists before connecting
-      if (!sessionToken || !guestId) {
-        logError("Cannot connect socket: Missing sessionToken or guestId", {
-          hasSessionToken: !!sessionToken,
-          hasGuestId: !!guestId
-        });
-        if (isMounted) {
-          setIsWebSocketConnected(false);
-        }
-        return;
-      }
-
-      connectSocket(sessionToken, guestId)
-        .then(() => {
-          if (isMounted && !connectionAborted) {
-            setIsWebSocketConnected(true);
-          }
-        })
-        .catch((err) => {
-          if (isMounted && !connectionAborted) {
-            logError("Failed to connect socket:", err);
-            setIsWebSocketConnected(false);
-            
-            // Only show error toast for actual failures, not user-actionable errors
-            if (err.message?.includes('Too many connections')) {
-              // User needs to close tabs - don't spam with toasts
-              logWarn("Too many connections - user should close other tabs");
-            } else if (err.message?.includes('Invalid session') || err.message?.includes('Authentication failed')) {
-              // Session invalid - suggest refresh
-              logError("Session invalid - user should refresh page");
-              toast.error("Session expired. Please refresh the page.");
-            } else {
-              toast.error("Real-time features unavailable. Some features may not work.");
-            }
-          }
-        });
-    }, 100); // Small delay to batch rapid dependency changes
-
-    const checkConnectionInterval = setInterval(() => {
-      if (isMounted) {
-        setIsWebSocketConnected(isConnected());
-      }
-    }, 1000);
-
-    // CRITICAL: Start heartbeat to maintain presence
-    const startHeartbeat = async () => {
-      if (connectionAborted) return;
+    if (isConnected()) {
       try {
-        await presenceService.heartbeat(sessionToken);
+        await endSocketChat(currentChatId);
+        return;
       } catch (err) {
-        if (isMounted) {
-          logError("Heartbeat failed:", err);
-        }
+        logWarn("WebSocket end failed, falling back to HTTP:", err.message);
       }
-    };
+    }
+    await chatService.endChat(sessionToken, currentChatId);
+  }, [sessionToken]);
 
-    // Send heartbeat every 30 seconds
-    heartbeatIntervalRef.current = setInterval(startHeartbeat, 30000);
-    // Initial heartbeat
-    startHeartbeat();
+  const endChat = useCallback(async () => {
+    if (!sessionToken || statusRef.current !== "matched") return;
+    setIsLoading(true);
+    try {
+      await endCurrentChat();
+      toast.success("Chat ended");
+    } catch (err) {
+      // 404: already ended on the server. Anything else: still leave the chat locally.
+      if (err?.status !== 404) toast.error(err.message);
+    } finally {
+      resetChat("ended");
+      setIsLoading(false);
+    }
+  }, [sessionToken, endCurrentChat, resetChat]);
 
-    // Cleanup function
-    return () => {
-      isMounted = false;
-      connectionAborted = true;
-      clearTimeout(connectionTimeout);
-      clearInterval(checkConnectionInterval);
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-      }
-      // CRITICAL: Only disconnect if this is the last component using the socket
-      // Don't disconnect on every unmount - let the singleton manage it
-      // Only notify backend of disconnect
-      presenceService.disconnect(sessionToken).catch((err) => {
-        logError("Failed to notify backend of disconnect:", err);
-      });
-    };
-  }, [sessionToken, guestId]);
-
-  useEffect(() => {
-    if (!sessionToken || !guestId || !isWebSocketConnected) return;
-
-    unsubscribeMatchRef.current = onMatchFound((data) => {
-      // Only process match if we're currently waiting and don't have a chat
-      if (statusRef.current === "waiting" && !chatIdRef.current) {
-        if (data.chat_id && data.partner_id) {
-          // Don't match with self
-          if (data.partner_id === guestId) {
-            logWarn("Ignoring self-match attempt");
-            return;
-          }
-
-          setChatId(data.chat_id);
-          setPartnerId(data.partner_id);
-          setStatus("matched");
-          setMessages([]);
-          // Only show toast for new matches from WebSocket
-          if (!previousChatIdRef.current) {
-            toast.success("You've been matched with someone!");
-          }
-        }
-      }
-    });
-
-    return () => {
-      if (unsubscribeMatchRef.current) {
-        unsubscribeMatchRef.current();
-      }
-    };
-  }, [sessionToken, guestId, isWebSocketConnected]);
-
-  useEffect(() => {
-    if (!sessionToken || !guestId || !chatId || !isWebSocketConnected) return;
-
-    unsubscribeMessageRef.current = onMessage(chatId, (data) => {
-      setMessages((prev) => {
-        const existingIds = new Set(prev.map((m) => m.message_id));
-        if (existingIds.has(data.message_id)) {
-          return prev;
-        }
-        return [
-          ...prev,
-          {
-            message_id: data.message_id,
-            sender: data.sender_guest_id === guestId ? "you" : "partner",
-            content: data.content,
-            created_at: data.created_at,
-            is_flagged: data.is_flagged || false,
-          },
-        ];
-      });
-    });
-
-    return () => {
-      if (unsubscribeMessageRef.current) {
-        unsubscribeMessageRef.current();
-      }
-    };
-  }, [sessionToken, guestId, chatId, isWebSocketConnected]);
-
-  useEffect(() => {
-    if (!sessionToken || !guestId || !chatId || !isWebSocketConnected) return;
-
-    const typingTimeoutRef = { current: null };
-
-    const unsubscribeTyping = onTyping(chatId, (data) => {
-      if (data.sender_guest_id !== guestId) {
-        setIsPartnerTyping(data.is_typing);
-
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-        }
-
-        if (data.is_typing) {
-          typingTimeoutRef.current = setTimeout(() => {
-            setIsPartnerTyping(false);
-          }, 3000);
-        }
-      }
-    });
-
-    return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      if (unsubscribeTyping) {
-        unsubscribeTyping();
-      }
-    };
-  }, [sessionToken, guestId, chatId, isWebSocketConnected]);
-
-  useEffect(() => {
-    if (!sessionToken || !guestId || !isWebSocketConnected) return;
-
-    const unsubscribeChatEnded = onChatEnded((data) => {
-      // Use ref to get current chatId value
-      const currentChatId = chatIdRef.current;
-
-      // Handle chat ended event
-      // Only process if we're in this chat, or we just need to clear state
-      if (currentChatId && data.chat_id === currentChatId) {
-        // CRITICAL: Prevent duplicate processing
-        if (statusRef.current === 'ended') {
+  const findNewMatch = useCallback(async () => {
+    if (!sessionToken) return;
+    if (statusRef.current === "matched") {
+      try {
+        await endCurrentChat();
+      } catch (err) {
+        if (err?.status !== 404) {
+          toast.error(err.message);
           return;
         }
+      }
+      resetChat("idle");
+    }
+    await startChat();
+  }, [sessionToken, endCurrentChat, resetChat, startChat]);
 
-        setChatId(null);
-        setPartnerId(null);
-        setStatus("ended");
-        setMessages([]);
-        setError(null);
-        previousChatIdRef.current = null;
-        stopPolling();
+  const cancelSearch = useCallback(async () => {
+    if (!sessionToken) return;
+    setIsLoading(true);
+    try {
+      leavePresencePool();
+      await presenceService.optOut(sessionToken);
+      toast("Search cancelled", { icon: "ℹ️" });
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      resetChat("idle");
+      setIsLoading(false);
+    }
+  }, [sessionToken, resetChat]);
 
-        // Show notification
-        toast("Your chat partner has ended the conversation.", { icon: "ℹ️" });
-      } else if (!currentChatId && data.ended_by !== guestId) {
-        // We received a chat ended event but we're not in a chat
-        // This means we were the one who ended it, or it's an old event
-        // Ignore silently
+  const returnToLobby = useCallback(() => {
+    setError(null);
+    resetChat("idle");
+  }, [resetChat]);
+
+  const sendMessage = useCallback(async (content) => {
+    const text = content.trim();
+    if (!sessionToken || !chatIdRef.current || !text) return;
+
+    try {
+      let message;
+      if (isConnected()) {
+        message = await sendSocketMessage(chatIdRef.current, text);
+      } else {
+        const response = await chatService.sendMessage(sessionToken, chatIdRef.current, text);
+        message = response.data?.data;
+      }
+
+      setMessages((prev) => mergeMessages(prev, [{
+        message_id: message.message_id,
+        sender: "you",
+        content: message.content,
+        created_at: message.created_at,
+        is_flagged: message.is_flagged,
+      }]));
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  }, [sessionToken]);
+
+  const fetchMessages = useCallback(async () => {
+    const currentChatId = chatIdRef.current;
+    if (!sessionToken || !currentChatId) return;
+
+    try {
+      const response = await chatService.getMessages(sessionToken, currentChatId);
+      const data = response.data?.data;
+      if (chatIdRef.current !== currentChatId) return; // chat changed while loading
+
+      setMessages((prev) => mergeMessages(prev, data?.messages || []));
+      if (data?.chat_status === "ended") handlePartnerEnded();
+    } catch (err) {
+      if (err?.status === 404) handlePartnerEnded();
+      else logError("Failed to fetch messages:", err.message);
+    }
+  }, [sessionToken, handlePartnerEnded]);
+
+  // Load history when entering a chat (also restores messages after a reload)
+  useEffect(() => {
+    if (chatId) fetchMessages();
+  }, [chatId, fetchMessages]);
+
+  // ── Connection, heartbeat and reload recovery ──────────────────────────────
+  useEffect(() => {
+    if (!sessionToken || !guestId) return;
+    let cancelled = false;
+
+    connectSocket(sessionToken, guestId)
+      .then(() => !cancelled && setIsWebSocketConnected(true))
+      .catch((err) => {
+        if (cancelled) return;
+        logError("Failed to connect socket:", err.message);
+        setIsWebSocketConnected(false);
+        if (!err.message?.includes("Too many")) {
+          toast.error("Real-time connection unavailable. Using slower updates.");
+        }
+      });
+
+    const connectionCheck = setInterval(() => setIsWebSocketConnected(isConnected()), 1000);
+
+    const heartbeat = async () => {
+      try {
+        const response = await presenceService.heartbeat(sessionToken);
+        const data = response.data?.data;
+        // After a reload the server still has our chat: go back into it
+        if (!cancelled && data?.has_active_chat && data.chat_id && statusRef.current !== "matched") {
+          enterChat(data.chat_id, null, { announce: false });
+        }
+      } catch (err) {
+        logError("Heartbeat failed:", err.message);
+      }
+    };
+    heartbeat();
+    const heartbeatInterval = setInterval(heartbeat, HEARTBEAT_INTERVAL);
+
+    return () => {
+      cancelled = true;
+      clearInterval(connectionCheck);
+      clearInterval(heartbeatInterval);
+    };
+  }, [sessionToken, guestId, enterChat]);
+
+  // ── REST polling fallback when the WebSocket is down ───────────────────────
+  useEffect(() => {
+    if (isWebSocketConnected || !sessionToken) return;
+
+    if (status === "waiting") {
+      const id = setInterval(async () => {
+        try {
+          const response = await chatService.startChat(sessionToken);
+          if (statusRef.current === "waiting") applyStartResult(response.data?.data);
+        } catch (err) {
+          logError("Match polling failed:", err.message);
+        }
+      }, POLLING_INTERVAL_MATCHING);
+      return () => clearInterval(id);
+    }
+
+    if (status === "matched") {
+      const id = setInterval(fetchMessages, POLLING_INTERVAL_MESSAGES);
+      return () => clearInterval(id);
+    }
+  }, [status, isWebSocketConnected, sessionToken, applyStartResult, fetchMessages]);
+
+  // If the socket comes up while waiting (e.g. after REST fallback), join the pool
+  useEffect(() => {
+    if (isWebSocketConnected && status === "waiting") joinPresencePool();
+  }, [isWebSocketConnected, status]);
+
+  // ── WebSocket subscriptions ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isWebSocketConnected) return;
+
+    const unsubscribeMatch = onMatchFound((data) => {
+      if (statusRef.current !== "waiting" || chatIdRef.current) return;
+      if (!data?.chat_id || data.partner_id === guestId) return;
+      enterChat(data.chat_id, data.partner_id);
+    });
+
+    const unsubscribeEnded = onChatEnded((data) => {
+      if (Number(data?.chat_id) === chatIdRef.current && data.ended_by !== guestId) {
+        handlePartnerEnded();
       }
     });
 
+    let typingTimer = null;
+    const unsubscribeTyping = onTyping((data) => {
+      if (data?.sender_guest_id === guestId) return;
+      setIsPartnerTyping(Boolean(data.is_typing));
+      clearTimeout(typingTimer);
+      if (data.is_typing) typingTimer = setTimeout(() => setIsPartnerTyping(false), TYPING_DISPLAY_MS);
+    });
+
     return () => {
-      if (unsubscribeChatEnded) {
-        unsubscribeChatEnded();
-      }
+      unsubscribeMatch();
+      unsubscribeEnded();
+      unsubscribeTyping();
+      clearTimeout(typingTimer);
     };
-  }, [sessionToken, guestId, isWebSocketConnected]);
+  }, [isWebSocketConnected, guestId, enterChat, handlePartnerEnded]);
 
   useEffect(() => {
-    if (chatId && chatId !== previousChatIdRef.current) {
-      // Join presence pool when entering waiting state
-      if (status === "waiting") {
-        joinPresencePool();
-      }
-      previousChatIdRef.current = chatId;
-    }
-  }, [chatId, status]);
+    if (!isWebSocketConnected || !chatId) return;
 
-  // Update previousChatIdRef when chatId changes to null (chat ended)
-  useEffect(() => {
-    if (!chatId && previousChatIdRef.current) {
-      previousChatIdRef.current = null;
-    }
-  }, [chatId]);
+    return onMessage(chatId, (data) => {
+      setIsPartnerTyping(false);
+      setMessages((prev) => mergeMessages(prev, [{
+        message_id: data.message_id,
+        sender: data.sender_guest_id === guestId ? "you" : "partner",
+        content: data.content,
+        created_at: data.created_at,
+        is_flagged: data.is_flagged || false,
+      }]));
+    });
+  }, [isWebSocketConnected, chatId, guestId]);
 
   const value = {
     chatId,
     partnerId,
     status,
     messages,
-    isPolling,
     isLoading,
     error,
     isPartnerTyping,
+    isWebSocketConnected,
     isChatEnded: status === "ended",
     startChat,
     endChat,
@@ -659,8 +371,6 @@ export const ChatProvider = ({ children }) => {
     findNewMatch,
     returnToLobby,
     sendMessage,
-    fetchMessages,
-    setStatus,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

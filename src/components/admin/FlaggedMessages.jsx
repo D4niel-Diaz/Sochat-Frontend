@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { adminService } from "../../api/services/adminService";
-import { AlertTriangle, MessageSquare, Eye } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 const FlaggedMessages = () => {
   const [flaggedMessages, setFlaggedMessages] = useState([]);
